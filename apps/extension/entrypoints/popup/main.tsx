@@ -6,24 +6,26 @@ import {
   type UserSettings,
   type VocabularyItem,
 } from '@lexistream/shared-types';
+import { WiktionaryDictionaryStore } from '@lexistream/translation-providers';
 import { VocabularyRepository } from '@lexistream/vocabulary-engine';
 
 const repo = new VocabularyRepository();
+const dictStore = new WiktionaryDictionaryStore();
 
 export function PopupApp() {
   const [items, setItems] = useState<VocabularyItem[]>([]);
-  const [pendingSync, setPendingSync] = useState(0);
+  const [installedDictCount, setInstalledDictCount] = useState(0);
   const [settings, setSettings] = useState<UserSettings | null>(null);
 
   useEffect(() => {
     void (async () => {
-      const [vocab, pending, cfg] = await Promise.all([
+      const [vocab, packs, cfg] = await Promise.all([
         repo.queryVocabulary({}),
-        repo.getPendingSyncCount(),
+        dictStore.listInstalledPacks(),
         repo.getSettings(),
       ]);
       setItems(vocab);
-      setPendingSync(pending);
+      setInstalledDictCount(packs.length);
       setSettings(cfg);
     })();
   }, []);
@@ -34,6 +36,11 @@ export function PopupApp() {
       enable_interactive_captions: !settings.enable_interactive_captions,
     });
     setSettings(updated);
+  };
+
+  const openExtensionPage = (hash = '') => {
+    const base = browser.runtime.getURL('/dashboard.html');
+    window.open(`${base}${hash}`, '_blank', 'noopener');
   };
 
   return (
@@ -56,8 +63,8 @@ export function PopupApp() {
           <div class="stat-label">Saved Words</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value">{pendingSync}</div>
-          <div class="stat-label">Offline Queued</div>
+          <div class="stat-value">{installedDictCount}</div>
+          <div class="stat-label">Wiktionary Dicts</div>
         </div>
       </section>
 
@@ -88,16 +95,23 @@ export function PopupApp() {
         )}
       </section>
 
-      <button
-        type="button"
-        class="btn-primary"
-        onClick={() => {
-          const dashboardUrl = browser.runtime.getURL('/dashboard.html');
-          window.open(dashboardUrl, '_blank', 'noopener');
-        }}
-      >
-        Open Study Dashboard
-      </button>
+      <div style={{ display: 'grid', gap: '7px' }}>
+        <button
+          type="button"
+          class="btn-primary"
+          style={{ background: '#334155' }}
+          onClick={() => openExtensionPage('#dictionaries')}
+        >
+          📚 Dicionários Wiktionary ({installedDictCount})
+        </button>
+        <button
+          type="button"
+          class="btn-primary"
+          onClick={() => openExtensionPage('')}
+        >
+          Open Study Dashboard
+        </button>
+      </div>
     </main>
   );
 }

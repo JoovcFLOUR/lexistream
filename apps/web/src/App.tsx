@@ -6,16 +6,27 @@ import {
 } from '@lexistream/shared-types';
 import { VocabularyRepository } from '@lexistream/vocabulary-engine';
 import {
+  WiktionaryDictionaryStore,
+  type InstalledDictionaryPack,
+} from '@lexistream/translation-providers';
+import {
   FlashcardService,
   type LearningStatistics,
 } from '@lexistream/flashcard-engine';
 import { DashboardPage } from './pages/DashboardPage';
 import { VocabularyPage } from './pages/VocabularyPage';
 import { FlashcardsPage } from './pages/FlashcardsPage';
+import { DictionariesPage } from './pages/DictionariesPage';
 import { StatisticsPage } from './pages/StatisticsPage';
 import { SettingsPage } from './pages/SettingsPage';
 
-type TabRoute = 'dashboard' | 'vocabulary' | 'flashcards' | 'statistics' | 'settings';
+type TabRoute =
+  | 'dashboard'
+  | 'vocabulary'
+  | 'flashcards'
+  | 'dictionaries'
+  | 'statistics'
+  | 'settings';
 
 const EMPTY_STATS: LearningStatistics = {
   totalCollected: 0,
@@ -34,29 +45,53 @@ const EMPTY_STATS: LearningStatistics = {
 
 export interface AppProps {
   repo?: VocabularyRepository;
+  dictionaryStore?: WiktionaryDictionaryStore;
 }
 
-export function App({ repo: injectedRepo }: AppProps) {
+function initialTabFromHash(): TabRoute {
+  if (typeof window !== 'undefined') {
+    const h = window.location.hash.replace(/^#/, '');
+    if (
+      h === 'dictionaries' ||
+      h === 'vocabulary' ||
+      h === 'flashcards' ||
+      h === 'statistics' ||
+      h === 'settings'
+    ) {
+      return h;
+    }
+  }
+  return 'dashboard';
+}
+
+export function App({ repo: injectedRepo, dictionaryStore: injectedDictStore }: AppProps) {
   const repo = useMemo(() => injectedRepo ?? new VocabularyRepository(), [injectedRepo]);
+  const dictStore = useMemo(
+    () => injectedDictStore ?? new WiktionaryDictionaryStore(),
+    [injectedDictStore],
+  );
   const flashcardService = useMemo(() => new FlashcardService(repo), [repo]);
 
-  const [tab, setTab] = useState<TabRoute>('dashboard');
+  const [tab, setTab] = useState<TabRoute>(initialTabFromHash);
   const [items, setItems] = useState<VocabularyItem[]>([]);
+  const [installedPacks, setInstalledPacks] = useState<InstalledDictionaryPack[]>([]);
   const [stats, setStats] = useState<LearningStatistics>(EMPTY_STATS);
   const [settings, setSettings] = useState<UserSettings>(() =>
     UserSettingsSchema.parse({}),
   );
 
   const refreshAll = useCallback(async () => {
-    const [vocab, computedStats, cfg] = await Promise.all([
+    const [vocab, computedStats, cfg, packs] = await Promise.all([
       repo.queryVocabulary({}),
       flashcardService.computeStatistics(),
       repo.getSettings(),
+      dictStore.listInstalledPacks(),
     ]);
     setItems(vocab);
     setStats(computedStats);
     setSettings(cfg);
-  }, [repo, flashcardService]);
+    setInstalledPacks(packs);
+  }, [repo, flashcardService, dictStore]);
 
   useEffect(() => {
     void refreshAll();
@@ -112,6 +147,7 @@ export function App({ repo: injectedRepo }: AppProps) {
               ['dashboard', 'Dashboard'],
               ['vocabulary', `Vocabulary (${items.length})`],
               ['flashcards', `Flashcards (${stats.awaitingReviewCount})`],
+              ['dictionaries', `Dictionaries (${installedPacks.length})`],
               ['statistics', 'Statistics'],
               ['settings', 'Settings & Sync'],
             ] as const
@@ -147,6 +183,13 @@ export function App({ repo: injectedRepo }: AppProps) {
           <FlashcardsPage
             flashcardService={flashcardService}
             onReviewCompleted={refreshAll}
+          />
+        )}
+        {tab === 'dictionaries' && (
+          <DictionariesPage
+            dictionaryStore={dictStore}
+            installedPacks={installedPacks}
+            onChanged={refreshAll}
           />
         )}
         {tab === 'statistics' && <StatisticsPage stats={stats} />}

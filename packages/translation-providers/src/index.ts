@@ -11,6 +11,26 @@ import {
 } from './cache';
 import { ContextualLexicalProvider } from './lexical-provider';
 import { BackendProxyTranslationProvider, type BackendProxyOptions } from './backend-proxy-provider';
+import {
+  parseWiktionaryDslTxt,
+  synthesizeBridgeDictionary,
+  mapWiktionaryPos,
+  type WiktionaryHeadwordEntry,
+  type WiktionarySenseItem,
+} from './wiktionary-parser';
+import {
+  WIKTIONARY_DICTIONARY_CATALOG,
+  WiktionaryDictionaryStore,
+  type WiktionaryCatalogEntry,
+  type InstalledDictionaryPack,
+  type DictionaryDownloadProgress,
+  type StoredDictionaryRecord,
+} from './wiktionary-store';
+import {
+  OfflineWiktionaryProvider,
+  LiveWiktionaryApiProvider,
+  type LiveWiktionaryApiOptions,
+} from './wiktionary-providers';
 
 export {
   BoundedLruCache,
@@ -19,6 +39,20 @@ export {
   ContextualLexicalProvider,
   BackendProxyTranslationProvider,
   type BackendProxyOptions,
+  parseWiktionaryDslTxt,
+  synthesizeBridgeDictionary,
+  mapWiktionaryPos,
+  type WiktionaryHeadwordEntry,
+  type WiktionarySenseItem,
+  WIKTIONARY_DICTIONARY_CATALOG,
+  WiktionaryDictionaryStore,
+  type WiktionaryCatalogEntry,
+  type InstalledDictionaryPack,
+  type DictionaryDownloadProgress,
+  type StoredDictionaryRecord,
+  OfflineWiktionaryProvider,
+  LiveWiktionaryApiProvider,
+  type LiveWiktionaryApiOptions,
 };
 
 export interface TranslationProvider {

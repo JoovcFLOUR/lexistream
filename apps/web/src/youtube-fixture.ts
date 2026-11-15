@@ -1,7 +1,9 @@
 import {
   ContextualLexicalProvider,
   IndexedDbTranslationCache,
+  OfflineWiktionaryProvider,
   TranslationService,
+  WiktionaryDictionaryStore,
 } from '@lexistream/translation-providers';
 import { VocabularyRepository } from '@lexistream/vocabulary-engine';
 import { InteractiveSubtitleController } from '../../extension/modules/interaction/subtitle-controller';
@@ -18,7 +20,10 @@ Object.defineProperty(video, 'currentTime', {
 
 const repo = new VocabularyRepository();
 const translationService = new TranslationService({
-  providers: [new ContextualLexicalProvider()],
+  providers: [
+    new OfflineWiktionaryProvider(new WiktionaryDictionaryStore()),
+    new ContextualLexicalProvider(),
+  ],
   persistentCache: new IndexedDbTranslationCache(),
 });
 

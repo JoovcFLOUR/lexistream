@@ -375,9 +375,10 @@ export class VocabularyRepository {
   async getAllReviewLogs(): Promise<ReviewLogRecord[]> {
     const db = await this.getDb();
     const tx = db.transaction(STORES.REVIEW_LOGS, 'readonly');
-    return (await idbRequest(
+    const logs = (await idbRequest(
       tx.objectStore(STORES.REVIEW_LOGS).getAll(),
     )) as ReviewLogRecord[];
+    return logs.sort((a, b) => a.reviewed_at.localeCompare(b.reviewed_at));
   }
 
   async getSettings(): Promise<UserSettings> {

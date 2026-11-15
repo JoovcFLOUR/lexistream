@@ -7,3 +7,4 @@
 | [0003](0003-typescript-over-rust-wasm-for-live-subtitle-tokenization.md) | Retain Native TypeScript Over Rust/WebAssembly for Live Subtitle Tokenization | accepted | 2026-11-15 |
 | [0004](0004-local-first-indexeddb-and-versioned-delta-sync.md) | Local-First IndexedDB Persistence with Sequence-Based CRDT-Inspired Delta Sync | accepted | 2026-11-15 |
 | [0005](0005-modular-monolith-rust-axum-sqlx.md) | Modular Monolithic Rust Backend with Axum, SQLx, and Pure-Rust TLS | accepted | 2026-11-15 |
+| [0006](0006-on-demand-wiktionary-dictionaries.md) | On-Demand Downloadable Wiktionary (CC BY-SA) Dictionaries Over Pre-Bundled Lexicons | accepted | 2026-11-15 |

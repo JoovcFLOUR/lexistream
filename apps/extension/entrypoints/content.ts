@@ -1,13 +1,39 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { browser } from 'wxt/browser';
+import type { TranslationRequest, TranslationResult } from '@lexistream/shared-types';
 import {
-  BackendProxyTranslationProvider,
   ContextualLexicalProvider,
   IndexedDbTranslationCache,
+  LiveWiktionaryApiProvider,
+  OfflineWiktionaryProvider,
   TranslationService,
+  WiktionaryDictionaryStore,
+  type TranslationProvider,
 } from '@lexistream/translation-providers';
 import { VocabularyRepository } from '@lexistream/vocabulary-engine';
 import { InteractiveSubtitleController } from '../modules/interaction/subtitle-controller';
+
+class ExtensionBackgroundDictionaryBridge implements TranslationProvider {
+  readonly id = 'extension-background-wiktionary-bridge';
+
+  async translate(
+    request: TranslationRequest,
+    signal?: AbortSignal,
+  ): Promise<TranslationResult> {
+    if (signal?.aborted) {
+      throw new DOMException('Translation aborted', 'AbortError');
+    }
+    const resp = (await browser.runtime.sendMessage({
+      type: 'LEXISTREAM_TRANSLATE',
+      request,
+    })) as { ok?: boolean; result?: TranslationResult; error?: string } | undefined;
+
+    if (!resp?.ok || !resp.result) {
+      throw new Error(resp?.error ?? 'Background dictionary bridge unavailable');
+    }
+    return resp.result;
+  }
+}
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
@@ -20,15 +46,13 @@ export default defineContentScript({
       return;
     }
 
-    const proxyProvider = new BackendProxyTranslationProvider({
-      baseUrl: settings.api_base_url,
-      getAuthToken: () => settings.auth_token,
-      timeoutMs: 2500,
-    });
-    const fallbackLexical = new ContextualLexicalProvider();
-
     const translationService = new TranslationService({
-      providers: [proxyProvider, fallbackLexical],
+      providers: [
+        new ExtensionBackgroundDictionaryBridge(),
+        new OfflineWiktionaryProvider(new WiktionaryDictionaryStore()),
+        new LiveWiktionaryApiProvider({ timeoutMs: 2800 }),
+        new ContextualLexicalProvider(),
+      ],
       persistentCache: new IndexedDbTranslationCache(),
       memoryCacheSize: 512,
     });
@@ -40,8 +64,6 @@ export default defineContentScript({
       targetLanguage: settings.target_language,
       hoverDebounceMs: settings.hover_debounce_ms,
       onVocabularyCaptured: (payload) => {
-        // Mirror captured YouTube word to the extension's chrome-extension:// IndexedDB
-        // so Popup and built-in Study Dashboard immediately display all saved words offline!
         void browser.runtime
           .sendMessage({ type: 'LEXISTREAM_CAPTURE', payload })
           .catch(() => {});

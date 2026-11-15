@@ -142,4 +142,43 @@ test.describe('LexiStream End-to-End Browser & Backend Sync Suite', () => {
     await expect(pageB.getByTestId('kpi-collected')).toHaveText('2');
     await contextB.close();
   });
+
+  test('starts with zero pre-installed dictionaries, downloads Wiktionary pack on click, powers YouTube hover offline, and uninstalls cleanly', async ({
+    page,
+  }) => {
+    await page.route('**/en-pt-enwiktionary.txt', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/plain; charset=utf-8',
+        body: [
+          '# English :: Portuguese Wiktionary CC BY-SA',
+          'fascinating {adj} (captivatingly interesting) :: fascinante, encantador',
+          'aardvark {n} (burrowing mammal) :: porco-formigueiro {m}',
+        ].join('\n'),
+      });
+    });
+
+    await page.goto('/#dictionaries');
+    await expect(page.getByTestId('installed-dicts-count')).toHaveText('0');
+
+    // Click download on Inglês -> Português
+    await page.getByTestId('download-dict-en-pt').click();
+    await expect(page.getByTestId('installed-dicts-count')).toHaveText('1');
+    await expect(page.getByTestId('dict-card-en-pt')).toContainText('Instalado');
+
+    // Verify YouTube subtitle hover immediately uses the newly downloaded offline Wiktionary pack
+    await page.goto('/youtube-fixture.html');
+    await page.locator('#cue-2').click();
+    const overlay = page.locator('[data-lexistream-overlay="true"]');
+    const fascinatingWord = overlay.locator('.lx-word', { hasText: 'fascinating' });
+    await fascinatingWord.hover();
+
+    const tooltipHost = page.locator('[data-lexistream-tooltip-host="true"]');
+    await expect(tooltipHost.locator('.translation')).toContainText('fascinante, encantador');
+
+    // Uninstall dictionary and verify storage returns to 0
+    await page.goto('/#dictionaries');
+    await page.getByTestId('remove-dict-en-pt').click();
+    await expect(page.getByTestId('installed-dicts-count')).toHaveText('0');
+  });
 });
