@@ -1,0 +1,378 @@
+{
+  "generatedAt": "2026-11-15T22:16:01.333Z",
+  "environment": {
+    "platform": "linux",
+    "arch": "arm64",
+    "release": "6.12.109+rpt-rpi-v8",
+    "cpus": "Cortex-A76",
+    "cpuCount": 4,
+    "totalMemMb": 7956,
+    "nodeVersion": "v22.23.1"
+  },
+  "bundleSizesGzipKb": {
+    "extensionContentScript": 28.48,
+    "rustWasmModule": 20.21
+  },
+  "textProcessing": {
+    "wasmBinaryBytes": 47801,
+    "wasmBinaryGzipBytes": 20700,
+    "wasmColdInstantiateMs": 12.09266300000013,
+    "tsColdCallMs": 2.1430089999998927,
+    "shortCue11Words": {
+      "ts": {
+        "count": 300,
+        "min": 0.013148000000001048,
+        "p50": 0.015880000000038308,
+        "p95": 0.0206383499999788,
+        "p99": 0.04126776999996536,
+        "max": 0.06296300000008159,
+        "mean": 0.01682624666667304,
+        "stdDev": 0.004330698972735833
+      },
+      "wasmJsonRoundTrip": {
+        "count": 300,
+        "min": 0.034722999999985404,
+        "p50": 0.03877749999992375,
+        "p95": 0.048446400000057115,
+        "p99": 0.07481555000006876,
+        "max": 0.2760200000000168,
+        "mean": 0.04097223333333356,
+        "stdDev": 0.014977546035726404
+      },
+      "wasmScalarCountOnly": {
+        "count": 300,
+        "min": 0.007241000000021813,
+        "p50": 0.009426000000075874,
+        "p95": 0.01339084999996203,
+        "p99": 0.021798000000039775,
+        "max": 1.0412830000000213,
+        "mean": 0.013467220000003029,
+        "stdDev": 0.05947947443988625
+      },
+      "exactMatchVerified": true
+    },
+    "longTranscript2200Words": {
+      "ts": {
+        "count": 40,
+        "min": 0.9660040000001118,
+        "p50": 1.0050044999999272,
+        "p95": 2.1956779000000886,
+        "p99": 3.97015854999992,
+        "max": 4.971465999999964,
+        "mean": 1.231859100000031,
+        "stdDev": 0.6836459954452859
+      },
+      "wasmJsonRoundTrip": {
+        "count": 40,
+        "min": 5.438634999999977,
+        "p50": 5.50625500000001,
+        "p95": 5.7934071500000295,
+        "p99": 8.88206570000009,
+        "max": 10.824917000000141,
+        "mean": 5.67596524999999,
+        "stdDev": 0.8298889685313227
+      },
+      "wasmScalarCountOnly": {
+        "count": 40,
+        "min": 0.7892080000001442,
+        "p50": 0.8276980000000549,
+        "p95": 0.977661250000051,
+        "p99": 1.0135784500000182,
+        "max": 1.0242820000000847,
+        "mean": 0.8460860750000279,
+        "stdDev": 0.05697447752783852
+      }
+    }
+  },
+  "extensionDom": {
+    "cueRendering200Transitions": {
+      "delegatedDocumentFragment": {
+        "count": 200,
+        "min": 0.17409399999996822,
+        "p50": 0.28538049999997384,
+        "p95": 0.9901530500000695,
+        "p99": 5.771243099999956,
+        "max": 8.71835299999998,
+        "mean": 0.5228738950000001,
+        "stdDev": 0.9597568804033518
+      },
+      "perWordListeners": {
+        "count": 200,
+        "min": 0.11324100000001636,
+        "p50": 0.21074250000003758,
+        "p95": 0.5460037500000336,
+        "p99": 1.1416413499999964,
+        "max": 3.028921000000082,
+        "mean": 0.2907793199999958,
+        "stdDev": 0.27031358823252344
+      },
+      "listenerCountDelegated": 3,
+      "listenerCountPerWord": 33
+    },
+    "observerBackgroundChurn300Mutations": {
+      "scopedPlayerObserverCallbacks": 1,
+      "scopedPlayerTotalMs": 56.852486,
+      "documentWideObserverCallbacks": 31,
+      "documentWideTotalMs": 68.41385100000002
+    }
+  },
+  "caching": {
+    "twoTierLruPlusIdb": {
+      "latencyMs": {
+        "count": 100,
+        "min": 0.019371000000091954,
+        "p50": 0.022295999999982996,
+        "p95": 4.94762380000011,
+        "p99": 7.976622190000032,
+        "max": 14.020690000000059,
+        "mean": 0.761890840000001,
+        "stdDev": 2.0664953083517386
+      },
+      "networkCalls": 14
+    },
+    "idbOnlyNoMemoryLru": {
+      "latencyMs": {
+        "count": 100,
+        "min": 0.04503799999997682,
+        "p50": 0.058166499999970256,
+        "p95": 3.277114449999965,
+        "p99": 3.355155879999951,
+        "max": 4.005276999999978,
+        "mean": 0.5156444899999997,
+        "stdDev": 1.13604582612424
+      },
+      "networkCalls": 14
+    },
+    "uncachedDirect": {
+      "latencyMs": {
+        "count": 100,
+        "min": 2.093841999999995,
+        "p50": 3.080586999999923,
+        "p95": 3.1929730499997504,
+        "p99": 3.5177194300001053,
+        "max": 5.070577000000412,
+        "mean": 3.1113569699999992,
+        "stdDev": 0.25176394321030515
+      },
+      "networkCalls": 100
+    }
+  },
+  "samplingPlanCount": 11,
+  "paretoAnalysis": {
+    "paretoFront": [
+      {
+        "id": "cfg-1-ts-native-delegated-fragment-lru+idb-scoped-player",
+        "variables": {
+          "tokenizer": "ts-native",
+          "dom": "delegated-fragment",
+          "cache": "lru+idb",
+          "observer": "scoped-player"
+        },
+        "objectives": {
+          "p95LatencyMs": 1.6016,
+          "memoryKb": 204,
+          "cpuMsPer100Cues": 157.932,
+          "bundleGzipKb": 28.48,
+          "networkRequestsPer100Hovers": 14
+        },
+        "feasible": true,
+        "constraintViolations": []
+      },
+      {
+        "id": "cfg-3-ts-native-per-word-listeners-lru+idb-scoped-player",
+        "variables": {
+          "tokenizer": "ts-native",
+          "dom": "per-word-listeners",
+          "cache": "lru+idb",
+          "observer": "scoped-player"
+        },
+        "objectives": {
+          "p95LatencyMs": 1.1575,
+          "memoryKb": 299,
+          "cpuMsPer100Cues": 113.517,
+          "bundleGzipKb": 28.48,
+          "networkRequestsPer100Hovers": 14
+        },
+        "feasible": true,
+        "constraintViolations": []
+      },
+      {
+        "id": "cfg-4-ts-native-delegated-fragment-idb-only-scoped-player",
+        "variables": {
+          "tokenizer": "ts-native",
+          "dom": "delegated-fragment",
+          "cache": "idb-only",
+          "observer": "scoped-player"
+        },
+        "objectives": {
+          "p95LatencyMs": 1.6375,
+          "memoryKb": 140,
+          "cpuMsPer100Cues": 157.932,
+          "bundleGzipKb": 28.48,
+          "networkRequestsPer100Hovers": 14
+        },
+        "feasible": true,
+        "constraintViolations": []
+      }
+    ],
+    "dominated": [
+      {
+        "id": "cfg-5-ts-native-delegated-fragment-uncached-scoped-player",
+        "variables": {
+          "tokenizer": "ts-native",
+          "dom": "delegated-fragment",
+          "cache": "uncached",
+          "observer": "scoped-player"
+        },
+        "objectives": {
+          "p95LatencyMs": 4.7723,
+          "memoryKb": 140,
+          "cpuMsPer100Cues": 157.932,
+          "bundleGzipKb": 28.48,
+          "networkRequestsPer100Hovers": 100
+        },
+        "feasible": true,
+        "constraintViolations": [],
+        "dominatedBy": "cfg-4-ts-native-delegated-fragment-idb-only-scoped-player"
+      },
+      {
+        "id": "cfg-6-ts-native-delegated-fragment-lru+idb-document-wide",
+        "variables": {
+          "tokenizer": "ts-native",
+          "dom": "delegated-fragment",
+          "cache": "lru+idb",
+          "observer": "document-wide"
+        },
+        "objectives": {
+          "p95LatencyMs": 7.8745,
+          "memoryKb": 284,
+          "cpuMsPer100Cues": 169.493,
+          "bundleGzipKb": 28.48,
+          "networkRequestsPer100Hovers": 14
+        },
+        "feasible": true,
+        "constraintViolations": [],
+        "dominatedBy": "cfg-1-ts-native-delegated-fragment-lru+idb-scoped-player"
+      },
+      {
+        "id": "cfg-7-ts-native-per-word-listeners-uncached-document-wide",
+        "variables": {
+          "tokenizer": "ts-native",
+          "dom": "per-word-listeners",
+          "cache": "uncached",
+          "observer": "document-wide"
+        },
+        "objectives": {
+          "p95LatencyMs": 10.601,
+          "memoryKb": 315,
+          "cpuMsPer100Cues": 125.078,
+          "bundleGzipKb": 28.48,
+          "networkRequestsPer100Hovers": 100
+        },
+        "feasible": true,
+        "constraintViolations": [],
+        "dominatedBy": "cfg-3-ts-native-per-word-listeners-lru+idb-scoped-player"
+      },
+      {
+        "id": "cfg-8-ts-native-per-word-listeners-idb-only-document-wide",
+        "variables": {
+          "tokenizer": "ts-native",
+          "dom": "per-word-listeners",
+          "cache": "idb-only",
+          "observer": "document-wide"
+        },
+        "objectives": {
+          "p95LatencyMs": 7.4662,
+          "memoryKb": 315,
+          "cpuMsPer100Cues": 125.078,
+          "bundleGzipKb": 28.48,
+          "networkRequestsPer100Hovers": 14
+        },
+        "feasible": true,
+        "constraintViolations": [],
+        "dominatedBy": "cfg-3-ts-native-per-word-listeners-lru+idb-scoped-player"
+      },
+      {
+        "id": "cfg-10-ts-native-per-word-listeners-lru+idb-document-wide",
+        "variables": {
+          "tokenizer": "ts-native",
+          "dom": "per-word-listeners",
+          "cache": "lru+idb",
+          "observer": "document-wide"
+        },
+        "objectives": {
+          "p95LatencyMs": 7.4303,
+          "memoryKb": 379,
+          "cpuMsPer100Cues": 125.078,
+          "bundleGzipKb": 28.48,
+          "networkRequestsPer100Hovers": 14
+        },
+        "feasible": true,
+        "constraintViolations": [],
+        "dominatedBy": "cfg-3-ts-native-per-word-listeners-lru+idb-scoped-player"
+      }
+    ],
+    "infeasible": [
+      {
+        "id": "cfg-2-rust-wasm-delegated-fragment-lru+idb-scoped-player",
+        "variables": {
+          "tokenizer": "rust-wasm",
+          "dom": "delegated-fragment",
+          "cache": "lru+idb",
+          "observer": "scoped-player"
+        },
+        "objectives": {
+          "p95LatencyMs": 1.6294,
+          "memoryKb": 1304,
+          "cpuMsPer100Cues": 160.712,
+          "bundleGzipKb": 48.69,
+          "networkRequestsPer100Hovers": 14
+        },
+        "feasible": false,
+        "constraintViolations": [
+          "Exceeds 45KB gzipped content-script budget"
+        ]
+      },
+      {
+        "id": "cfg-9-rust-wasm-delegated-fragment-uncached-scoped-player",
+        "variables": {
+          "tokenizer": "rust-wasm",
+          "dom": "delegated-fragment",
+          "cache": "uncached",
+          "observer": "scoped-player"
+        },
+        "objectives": {
+          "p95LatencyMs": 4.8001,
+          "memoryKb": 1240,
+          "cpuMsPer100Cues": 160.712,
+          "bundleGzipKb": 48.69,
+          "networkRequestsPer100Hovers": 100
+        },
+        "feasible": false,
+        "constraintViolations": [
+          "Exceeds 45KB gzipped content-script budget"
+        ]
+      },
+      {
+        "id": "cfg-11-rust-wasm-delegated-fragment-idb-only-scoped-player",
+        "variables": {
+          "tokenizer": "rust-wasm",
+          "dom": "delegated-fragment",
+          "cache": "idb-only",
+          "observer": "scoped-player"
+        },
+        "objectives": {
+          "p95LatencyMs": 1.6653,
+          "memoryKb": 1240,
+          "cpuMsPer100Cues": 160.712,
+          "bundleGzipKb": 48.69,
+          "networkRequestsPer100Hovers": 14
+        },
+        "feasible": false,
+        "constraintViolations": [
+          "Exceeds 45KB gzipped content-script budget"
+        ]
+      }
+    ]
+  }
+}

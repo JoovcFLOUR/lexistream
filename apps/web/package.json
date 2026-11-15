@@ -1,0 +1,23 @@
+{
+  "name": "@lexistream/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lexistream/flashcard-engine": "workspace:*",
+    "@lexistream/language-core": "workspace:*",
+    "@lexistream/shared-types": "workspace:*",
+    "@lexistream/translation-providers": "workspace:*",
+    "@lexistream/vocabulary-engine": "workspace:*",
+    "preact": "^10.26.4"
+  },
+  "devDependencies": {
+    "vite": "^6.2.2"
+  }
+}

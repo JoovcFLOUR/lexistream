@@ -1,0 +1,9 @@
+packages:
+  - "apps/extension"
+  - "apps/web"
+  - "packages/*"
+  - "benchmarks"
+
+allowBuilds:
+  esbuild: true
+  spawn-sync: false

@@ -1,0 +1,145 @@
+import { expect, test } from '@playwright/test';
+import { spawn, type ChildProcess } from 'node:child_process';
+import path from 'node:path';
+
+let apiProcess: ChildProcess | null = null;
+const TEST_API_PORT = 18787;
+const TEST_API_URL = `http://127.0.0.1:${TEST_API_PORT}`;
+
+test.beforeAll(async () => {
+  const binPath = path.resolve(process.cwd(), 'target/debug/lexistream-api');
+  apiProcess = spawn(binPath, [], {
+    env: {
+      ...process.env,
+      BIND_ADDR: `127.0.0.1:${TEST_API_PORT}`,
+      DATABASE_URL:
+        process.env.DATABASE_URL ??
+        'postgres://lexistream:lexistream_dev_password@127.0.0.1:54329/lexistream',
+    },
+    stdio: 'ignore',
+  });
+
+  // Wait for /api/v1/health
+  for (let i = 0; i < 30; i++) {
+    try {
+      const res = await fetch(`${TEST_API_URL}/api/v1/health`);
+      if (res.ok) break;
+    } catch {
+      // retry
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+});
+
+test.afterAll(() => {
+  apiProcess?.kill('SIGTERM');
+});
+
+test.describe('LexiStream End-to-End Browser & Backend Sync Suite', () => {
+  test('captures contextual vocabulary from interactive YouTube subtitles and reviews flashcards offline', async ({
+    page,
+  }) => {
+    await page.goto('/youtube-fixture.html');
+
+    const overlay = page.locator('[data-lexistream-overlay="true"]');
+    await expect(overlay).toContainText('I never thought this would happen.');
+
+    // Hover over "thought" (verb context)
+    const thoughtWord = overlay.locator('.lx-word', { hasText: 'thought' });
+    await thoughtWord.hover();
+
+    const tooltipHost = page.locator('[data-lexistream-tooltip-host="true"]');
+    await expect(tooltipHost).toBeVisible();
+    await expect(tooltipHost.locator('.meta')).toContainText('think · verb');
+    await expect(tooltipHost.locator('.translation')).toContainText('pensei / pensou');
+
+    // Click to capture into IndexedDB
+    await thoughtWord.click();
+    await expect(tooltipHost.locator('.status-badge')).toContainText('Saved (1 context)');
+
+    // Switch to Cue 2 ("That was a fascinating thought by the river bank.")
+    await page.locator('#cue-2').click();
+    await expect(overlay).toContainText('river bank');
+
+    const bankWord = overlay.locator('.lx-word', { hasText: 'bank' });
+    await bankWord.hover();
+    await expect(tooltipHost.locator('.translation')).toContainText('margem');
+    await bankWord.click();
+    await expect(tooltipHost.locator('.status-badge')).toContainText('Saved');
+
+    // Toggle captions off -> verify graceful fallback pill
+    await page.locator('#cue-off').click();
+    await expect(overlay.locator('.lexistream-status-pill')).toContainText(
+      'Enable YouTube captions (CC)',
+    );
+
+    // Navigate to Study Dashboard on same origin (shares IndexedDB)
+    await page.goto('/');
+    await expect(page.getByTestId('kpi-collected')).toHaveText('2');
+    await expect(page.getByTestId('kpi-awaiting')).toHaveText('2');
+
+    // Inspect Vocabulary Library & deep-link timestamp
+    await page.getByTestId('nav-vocabulary').click();
+    await expect(page.getByTestId('vocab-card')).toHaveCount(2);
+    await expect(page.locator('a[href*="t=125s"]')).toBeVisible();
+
+    // Complete FSRS Flashcard review session
+    await page.getByTestId('nav-flashcards').click();
+    await page.getByTestId('reveal-answer-btn').click();
+    await page.getByTestId('rate-good').click();
+
+    await page.getByTestId('reveal-answer-btn').click();
+    await page.getByTestId('rate-easy').click();
+
+    await expect(page.getByTestId('flashcards-empty')).toContainText('All Caught Up!');
+
+    // Verify Statistics reflects reviewed count honestly
+    await page.getByTestId('nav-statistics').click();
+    await expect(page.locator('main')).toContainText('Demonstrably Retained');
+  });
+
+  test('synchronizes offline vocabulary and FSRS progress across two independent browser devices via Rust + PostgreSQL API', async ({
+    browser,
+  }) => {
+    const email = `e2e-sync-${Date.now()}@example.com`;
+    const password = 'SafeSyncPassword123!';
+
+    // Device A: capture offline, then register and sync push
+    const contextA = await browser.newContext();
+    const pageA = await contextA.newPage();
+    await pageA.goto('/');
+    await pageA.getByTestId('seed-sample-btn').click();
+    await expect(pageA.getByTestId('kpi-collected')).toHaveText('2');
+
+    await pageA.getByTestId('nav-settings').click();
+    await pageA.getByLabel('Rust Backend API URL').fill(TEST_API_URL);
+    await pageA.getByLabel('Account Email').fill(email);
+    await pageA.getByLabel('Password').fill(password);
+    await pageA.getByRole('button', { name: 'Register Account' }).click();
+    await expect(pageA.getByRole('status')).toContainText(`Authenticated as ${email}`);
+
+    await pageA.getByTestId('sync-now-btn').click();
+    await expect(pageA.getByRole('status')).toContainText('pushed 2 words');
+    await contextA.close();
+
+    // Device B (fresh isolated IndexedDB): sign in and pull synced vocabulary
+    const contextB = await browser.newContext();
+    const pageB = await contextB.newPage();
+    await pageB.goto('/');
+    await expect(pageB.getByTestId('kpi-collected')).toHaveText('0');
+
+    await pageB.getByTestId('nav-settings').click();
+    await pageB.getByLabel('Rust Backend API URL').fill(TEST_API_URL);
+    await pageB.getByLabel('Account Email').fill(email);
+    await pageB.getByLabel('Password').fill(password);
+    await pageB.getByRole('button', { name: 'Sign In' }).click();
+    await expect(pageB.getByRole('status')).toContainText(`Authenticated as ${email}`);
+
+    await pageB.getByTestId('sync-now-btn').click();
+    await expect(pageB.getByRole('status')).toContainText('pulled 2 words');
+
+    await pageB.getByTestId('nav-dashboard').click();
+    await expect(pageB.getByTestId('kpi-collected')).toHaveText('2');
+    await contextB.close();
+  });
+});

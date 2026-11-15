@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lexistream-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lexistream
+      POSTGRES_PASSWORD: lexistream_dev_password
+      POSTGRES_DB: lexistream
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - lexistream_pgdata:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c shared_buffers=32MB
+      -c work_mem=4MB
+      -c max_connections=25
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexistream -d lexistream"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  lexistream_pgdata:

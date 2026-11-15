@@ -1,0 +1,22 @@
+{
+  "name": "@lexistream/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lexistream/language-core": "workspace:*",
+    "@lexistream/shared-types": "workspace:*",
+    "@lexistream/translation-providers": "workspace:*",
+    "@lexistream/vocabulary-engine": "workspace:*",
+    "preact": "^10.26.4"
+  },
+  "devDependencies": {
+    "wxt": "^0.20.3"
+  }
+}
