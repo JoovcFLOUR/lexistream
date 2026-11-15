@@ -346,7 +346,7 @@ export class WiktionaryDictionaryStore {
 
     const allEntries = Array.from(finalMap.values());
     const db = await this.getDb();
-    const BATCH_SIZE = 2500;
+    const BATCH_SIZE = 8000;
 
     for (let offset = 0; offset < allEntries.length; offset += BATCH_SIZE) {
       const slice = allEntries.slice(offset, offset + BATCH_SIZE);
@@ -393,6 +393,7 @@ export class WiktionaryDictionaryStore {
       detail: `Installed ${allEntries.length} Wiktionary entries`,
     });
 
+    this.emitDictionaryChanged(pairId);
     return packMeta;
   }
 
@@ -409,5 +410,25 @@ export class WiktionaryDictionaryStore {
     }
 
     await idbTx(tx);
+    this.emitDictionaryChanged(pairId);
+  }
+
+  private emitDictionaryChanged(pairId: string): void {
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const ch = new BroadcastChannel('lexistream-events');
+        ch.postMessage({ type: 'dictionary_changed', pairId });
+        ch.close();
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('lexistream:events', {
+            detail: { type: 'dictionary_changed', pairId },
+          }),
+        );
+      }
+    } catch {
+      // Ignore in restricted environments
+    }
   }
 }

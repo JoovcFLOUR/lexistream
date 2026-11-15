@@ -6,6 +6,7 @@ import {
   lemmatizeInContext,
   detectPhrasesInTokens,
   extractSentenceForToken,
+  detectSubtitleLanguage,
 } from './index';
 
 describe('@lexistream/language-core', () => {
@@ -102,5 +103,33 @@ describe('@lexistream/language-core', () => {
     const res = processor.analyzeWord('gave', 'She gave up smoking last year.', 'en');
     expect(res.lemma).toBe('give up');
     expect(res.partOfSpeech).toBe('phrase');
+  });
+
+  it('lemmatizes French inflections ("appelée" -> "appeler", elisions "l\'état" -> "état") and auto-detects French subtitle language', () => {
+    expect(
+      detectSubtitleLanguage("Aujourd'hui, ce petit territoire souverain et indépendant"),
+    ).toBe('fr');
+
+    const appelee = lemmatizeInContext(
+      'appelée',
+      'Cette île est appelée Formosa.',
+      'fr',
+    );
+    expect(appelee.lemma).toBe('appeler');
+    expect(appelee.partOfSpeech).toBe('verb');
+
+    const elided = lemmatizeInContext(
+      "l'indépendance",
+      "C'est l'indépendance du pays.",
+      'fr',
+    );
+    expect(elided.lemma).toBe('indépendance');
+
+    const aujourdhui = lemmatizeInContext(
+      "Aujourd'hui",
+      "Aujourd'hui, ce petit territoire souverain et indépendant",
+      'fr',
+    );
+    expect(aujourdhui.lemma).toBe("aujourd'hui");
   });
 });

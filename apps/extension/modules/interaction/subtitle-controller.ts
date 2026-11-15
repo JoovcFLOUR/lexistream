@@ -5,12 +5,16 @@ import type {
 } from '@lexistream/shared-types';
 import {
   detectPhrasesInTokens,
+  detectSubtitleLanguage,
   extractSentenceForToken,
   tokenizeSubtitle,
   type SubtitleToken,
 } from '@lexistream/language-core';
 import type { TranslationService } from '@lexistream/translation-providers';
-import type { VocabularyRepository } from '@lexistream/vocabulary-engine';
+import {
+  subscribeLexiStreamEvents,
+  type VocabularyRepository,
+} from '@lexistream/vocabulary-engine';
 import {
   YouTubeCaptionAdapter,
   type SubtitleCueSnapshot,
@@ -106,6 +110,7 @@ export class InteractiveSubtitleController {
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private activeAbortController: AbortController | null = null;
+  private unsubscribeEvents: (() => void) | null = null;
 
   private readonly boundPointerOver: (ev: Event) => void;
   private readonly boundPointerOut: (ev: Event) => void;
@@ -139,6 +144,17 @@ export class InteractiveSubtitleController {
   start(): void {
     this.injectPlayerStyleOnce();
     this.tooltip = new ShadowTooltipView(this.doc);
+    this.unsubscribeEvents = subscribeLexiStreamEvents((ev) => {
+      if (ev.type === 'dictionary_changed') {
+        this.latestResultByTokenIdx.clear();
+        void this.translationService.clearCaches();
+      }
+      if (ev.type === 'vocabulary_changed') {
+        void this.refreshSavedNormalizedCache().then(() => {
+          this.syncSavedHighlightsInDom();
+        });
+      }
+    });
     void this.refreshSavedNormalizedCache().then(() => {
       this.adapter.start();
     });
@@ -146,6 +162,8 @@ export class InteractiveSubtitleController {
 
   stop(): void {
     this.cancelPendingHover();
+    this.unsubscribeEvents?.();
+    this.unsubscribeEvents = null;
     this.adapter.stop();
     if (this.overlayRoot) {
       this.overlayRoot.removeEventListener('mouseover', this.boundPointerOver);
@@ -193,9 +211,7 @@ export class InteractiveSubtitleController {
   }
 
   private async refreshSavedNormalizedCache(): Promise<void> {
-    const items = await this.vocabularyRepo.queryVocabulary({
-      language: this.sourceLanguage,
-    });
+    const items = await this.vocabularyRepo.queryVocabulary({});
     this.savedNormalizedSet.clear();
     for (const item of items) {
       this.savedNormalizedSet.add(item.lemma.toLowerCase());
@@ -203,6 +219,24 @@ export class InteractiveSubtitleController {
         this.savedNormalizedSet.add(sf.toLowerCase());
       }
     }
+  }
+
+  private syncSavedHighlightsInDom(): void {
+    if (!this.overlayRoot) return;
+    const spans = this.overlayRoot.querySelectorAll<HTMLElement>('.lx-word');
+    spans.forEach((sp) => {
+      const idx = Number(sp.dataset.tokenIdx);
+      const tok = this.activeTokens.find((t) => t.index === idx);
+      if (!tok) return;
+      const isSaved =
+        this.savedNormalizedSet.has(tok.normalized) ||
+        (tok.detectedPhrase && this.savedNormalizedSet.has(tok.detectedPhrase));
+      if (isSaved) {
+        sp.dataset.saved = 'true';
+      } else {
+        delete sp.dataset.saved;
+      }
+    });
   }
 
   private async renderCueSnapshot(snapshot: SubtitleCueSnapshot): Promise<void> {
@@ -233,8 +267,9 @@ export class InteractiveSubtitleController {
     }
 
     player.classList.add('lexistream-active');
-    const rawTokens = tokenizeSubtitle(snapshot.text, this.sourceLanguage);
-    this.activeTokens = detectPhrasesInTokens(rawTokens, this.sourceLanguage);
+    const cueLang = detectSubtitleLanguage(snapshot.text, this.sourceLanguage);
+    const rawTokens = tokenizeSubtitle(snapshot.text, cueLang);
+    this.activeTokens = detectPhrasesInTokens(rawTokens, cueLang);
 
     const bar = this.doc.createElement('div');
     bar.className = 'lexistream-caption-bar';
@@ -264,6 +299,19 @@ export class InteractiveSubtitleController {
 
     bar.appendChild(fragment);
     root.appendChild(bar);
+  }
+
+  private computeTooltipAnchorRect(span: HTMLElement): DOMRect {
+    const wordRect = span.getBoundingClientRect();
+    const bar = span.closest('.lexistream-caption-bar');
+    if (!bar) return wordRect;
+    const barRect = bar.getBoundingClientRect();
+    return new DOMRect(
+      wordRect.x,
+      barRect.y,
+      wordRect.width,
+      barRect.height,
+    );
   }
 
   private resolveWordTarget(ev: Event): { span: HTMLElement; token: SubtitleToken } | null {
@@ -313,11 +361,12 @@ export class InteractiveSubtitleController {
     this.activeAbortController = controller;
 
     const sentence = extractSentenceForToken(this.activeCue.text, token) || this.activeCue.text;
-    const rect = span.getBoundingClientRect();
+    const effectiveLang = detectSubtitleLanguage(sentence, this.sourceLanguage);
+    const rect = this.computeTooltipAnchorRect(span);
 
     const savedMatches = await this.vocabularyRepo.findMatchingEntries(
       token.detectedPhrase ?? token.text,
-      this.sourceLanguage,
+      effectiveLang,
     );
 
     this.tooltip.render({
@@ -332,7 +381,7 @@ export class InteractiveSubtitleController {
         {
           word: token.text,
           context: sentence,
-          source_language: this.sourceLanguage,
+          source_language: effectiveLang,
           target_language: this.targetLanguage,
         },
         controller.signal,
@@ -343,11 +392,11 @@ export class InteractiveSubtitleController {
 
       const postLookupSaved = await this.vocabularyRepo.findMatchingEntries(
         result.lemma,
-        this.sourceLanguage,
+        effectiveLang,
       );
 
       this.tooltip.render({
-        anchorRect: span.getBoundingClientRect(),
+        anchorRect: this.computeTooltipAnchorRect(span),
         surfaceWord: token.text,
         result,
         savedEntries: postLookupSaved.length > 0 ? postLookupSaved : savedMatches,
@@ -365,6 +414,7 @@ export class InteractiveSubtitleController {
 
     const { span, token } = resolved;
     const sentence = extractSentenceForToken(this.activeCue.text, token) || this.activeCue.text;
+    const effectiveLang = detectSubtitleLanguage(sentence, this.sourceLanguage);
 
     let translation = this.latestResultByTokenIdx.get(token.index);
     if (!translation) {
@@ -399,7 +449,7 @@ export class InteractiveSubtitleController {
     const capturePayload: VocabularyCaptureInput = {
       surface_form: token.text,
       lemma: translation.lemma,
-      language: this.sourceLanguage,
+      language: effectiveLang,
       target_language: this.targetLanguage,
       translation: translation.contextual_translation,
       definition: translation.definition,
@@ -418,15 +468,15 @@ export class InteractiveSubtitleController {
 
     this.savedNormalizedSet.add(translation.lemma.toLowerCase());
     this.savedNormalizedSet.add(token.normalized);
-    span.dataset.saved = 'true';
+    this.syncSavedHighlightsInDom();
 
     const updatedMatches = await this.vocabularyRepo.findMatchingEntries(
       translation.lemma,
-      this.sourceLanguage,
+      effectiveLang,
     );
 
     this.tooltip?.render({
-      anchorRect: span.getBoundingClientRect(),
+      anchorRect: this.computeTooltipAnchorRect(span),
       surfaceWord: token.text,
       result: translation,
       savedEntries: updatedMatches,

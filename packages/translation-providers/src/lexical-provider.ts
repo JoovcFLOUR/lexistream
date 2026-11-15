@@ -229,22 +229,25 @@ function translateSentenceLightweight(
   const exact = CANONICAL_SENTENCE_TRANSLATIONS[sentence.trim().toLowerCase()]?.[langKey];
   if (exact) return exact;
 
-  if (langKey === 'pt') {
-    const tokens = tokenizeSubtitle(sentence, 'en');
-    return tokens
-      .map((tok) => {
-        if (!tok.isWord) return tok.text;
-        const sense = LEXICON[tok.normalized]?.[0];
-        if (sense?.translations.pt) {
-          return sense.translations.pt.split('/')[0]!.trim();
-        }
-        return WORD_GLOSS_PT[tok.normalized] ?? tok.text;
-      })
-      .join('');
-  }
+    if (langKey === 'pt' && sentence.trim().split(/\s+/).every((w) => /^[a-zA-Z'’.,!?-]+$/.test(w))) {
+      const tokens = tokenizeSubtitle(sentence, 'en');
+      const translated = tokens
+        .map((tok) => {
+          if (!tok.isWord) return tok.text;
+          const sense = LEXICON[tok.normalized]?.[0];
+          if (sense?.translations.pt) {
+            return sense.translations.pt.split('/')[0]!.trim();
+          }
+          return WORD_GLOSS_PT[tok.normalized] ?? tok.text;
+        })
+        .join('');
+      if (translated.toLowerCase() !== sentence.trim().toLowerCase()) {
+        return translated;
+      }
+    }
 
-  return `[${langKey.toUpperCase()}] ${sentence}`;
-}
+    return '';
+  }
 
 export class ContextualLexicalProvider implements TranslationProvider {
   readonly id = 'local-contextual-lexicon';
@@ -311,6 +314,11 @@ export class ContextualLexicalProvider implements TranslationProvider {
       examples: s.examples,
     }));
 
+    const knownInBuiltIn =
+      Boolean(chosenSense) ||
+      Boolean(WORD_GLOSS_PT[analysis.normalized]) ||
+      Boolean(WORD_GLOSS_PT[analysis.lemma]);
+
     const fallbackTranslation =
       WORD_GLOSS_PT[analysis.normalized] ??
       WORD_GLOSS_PT[analysis.lemma] ??
@@ -344,7 +352,7 @@ export class ContextualLexicalProvider implements TranslationProvider {
       context_sentence: request.context,
       context_translation: translateSentenceLightweight(request.context, targetLang),
       meanings,
-      provider: this.id,
+      provider: knownInBuiltIn ? this.id : 'local-fallback-untranslated',
       cached: false,
     };
   }

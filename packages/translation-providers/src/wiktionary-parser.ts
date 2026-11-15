@@ -18,10 +18,19 @@ const POS_TAG_MAP: Record<string, PartOfSpeech> = {
   n: 'noun',
   noun: 'noun',
   prop: 'noun',
+  m: 'noun',
+  f: 'noun',
+  mf: 'noun',
+  nt: 'noun',
+  pl: 'noun',
+  p: 'noun',
+  c: 'noun',
   v: 'verb',
   verb: 'verb',
   vi: 'verb',
   vt: 'verb',
+  vr: 'verb',
+  vtr: 'verb',
   adj: 'adjective',
   adjective: 'adjective',
   adv: 'adverb',
@@ -36,6 +45,7 @@ const POS_TAG_MAP: Record<string, PartOfSpeech> = {
   intj: 'interjection',
   article: 'determiner',
   det: 'determiner',
+  determiner: 'determiner',
   num: 'determiner',
   phr: 'phrase',
   phrase: 'phrase',
@@ -45,8 +55,8 @@ const POS_TAG_MAP: Record<string, PartOfSpeech> = {
 export function mapWiktionaryPos(rawPos: string, headword = ''): PartOfSpeech {
   const cleaned = rawPos.trim().toLowerCase().replace(/[^a-z]/g, '');
   const mapped = POS_TAG_MAP[cleaned];
-  if (headword.includes(' ') && (!mapped || mapped === 'verb' || mapped === 'other')) {
-    return mapped === 'verb' ? 'verb' : 'phrase';
+  if (headword.includes(' ') && (!mapped || mapped === 'other')) {
+    return 'phrase';
   }
   return mapped ?? 'other';
 }
@@ -54,17 +64,33 @@ export function mapWiktionaryPos(rawPos: string, headword = ''): PartOfSpeech {
 function cleanTranslationToken(raw: string): string {
   return raw
     .replace(/\{[^}]*\}/g, '') // remove gender/number tags like {m}, {f}, {m-f}
-    .replace(/\[[^\]]*\]/g, '') // remove region/register tags like [Brazil]
+    .replace(/\[[^\]]*\]/g, '') // remove region/register tags like [Brazil], [idiomatic]
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-const LINE_REGEX =
-  /^([^#{:\r\n]+?)\s*\{([^}]+)\}\s*(?:\(([^)]*)\))?\s*(?:SEE:\s*([^:]+?)\s*)?::\s*(.*)$/;
+function extractBalancedParenGloss(restLeft: string): string {
+  const firstOpen = restLeft.indexOf('(');
+  if (firstOpen === -1) return '';
+  let depth = 0;
+  for (let i = firstOpen; i < restLeft.length; i++) {
+    const ch = restLeft[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth === 0) {
+        return restLeft.slice(firstOpen + 1, i).trim();
+      }
+    }
+  }
+  const lastClose = restLeft.lastIndexOf(')');
+  return lastClose > firstOpen ? restLeft.slice(firstOpen + 1, lastClose).trim() : '';
+}
 
 /**
  * Parses Wiktionary CC BY-SA bilingual plain-text dictionaries (`open-dsl-dict` format)
- * into a compact headword-indexed Map.
+ * into a compact headword-indexed Map. Handles nested parentheses, `{m}`/`{vt}` tags,
+ * `[domain]` brackets, and `SEE:` cross-references cleanly.
  */
 export function parseWiktionaryDslTxt(
   rawText: string,
@@ -78,15 +104,29 @@ export function parseWiktionaryDslTxt(
     const line = lines[i]!.trim();
     if (!line || line.startsWith('#')) continue;
 
-    const match = LINE_REGEX.exec(line);
-    if (!match) continue;
+    const sepIdx = line.indexOf('::');
+    if (sepIdx === -1) continue;
 
-    const headword = match[1]!.trim();
-    const rawPos = match[2] ?? '';
-    const gloss = (match[3] ?? '').trim();
-    const seeRef = match[4]?.trim();
-    const rhs = (match[5] ?? '').trim();
+    const lhs = line.slice(0, sepIdx).trim();
+    const rhs = line.slice(sepIdx + 2).trim();
 
+    const braceOpen = lhs.indexOf('{');
+    const braceClose = braceOpen !== -1 ? lhs.indexOf('}', braceOpen + 1) : -1;
+    if (braceOpen === -1 || braceClose === -1) continue;
+
+    const headword = lhs.slice(0, braceOpen).trim();
+    const rawPos = lhs.slice(braceOpen + 1, braceClose).trim();
+    const afterPos = lhs.slice(braceClose + 1).trim();
+
+    let seeRef: string | undefined;
+    let glossPart = afterPos;
+    const seeIdx = afterPos.indexOf('SEE:');
+    if (seeIdx !== -1) {
+      seeRef = afterPos.slice(seeIdx + 4).trim();
+      glossPart = afterPos.slice(0, seeIdx).trim();
+    }
+
+    const gloss = extractBalancedParenGloss(glossPart);
     const normalized = normalizeToken(headword, sourceLanguage);
     if (!normalized) continue;
 
@@ -113,7 +153,7 @@ export function parseWiktionaryDslTxt(
 
     const existing = entries.get(normalized);
     if (existing) {
-      if (existing.senses.length < 8) {
+      if (existing.senses.length < 10) {
         existing.senses.push(sense);
       }
     } else {
@@ -126,6 +166,34 @@ export function parseWiktionaryDslTxt(
   }
 
   return entries;
+}
+
+function extractPivotLookupCandidates(
+  rawPivotGloss: string,
+  pivotLanguage: LanguageCode,
+): string[] {
+  const candidates: string[] = [];
+  const push = (s: string) => {
+    const n = normalizeToken(s, pivotLanguage);
+    if (n && !candidates.includes(n)) candidates.push(n);
+  };
+
+  // Strip parenthetical clarifications e.g. "to call (out)" -> "to call", "little one (child)" -> "little one"
+  const withoutParens = rawPivotGloss.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const withoutTo = withoutParens.replace(/^to\s+/i, '').trim();
+
+  push(withoutTo);
+  push(withoutParens);
+
+  // If multiword like "little one", also try leading headword "little" as secondary candidate
+  if (withoutTo.includes(' ')) {
+    const firstWord = withoutTo.split(' ')[0];
+    if (firstWord && firstWord.length >= 3) {
+      push(firstWord);
+    }
+  }
+
+  return candidates;
 }
 
 /**
@@ -144,24 +212,34 @@ export function synthesizeBridgeDictionary(
 
     for (const sense of srcEntry.senses) {
       const targetTranslations = new Set<string>();
-      for (const pivotWord of sense.translations) {
-        const pivotNorm = normalizeToken(pivotWord, pivotLanguage);
-        const pivotEntry = pivotToTarget.get(pivotNorm);
-        if (!pivotEntry) continue;
+      for (const pivotPhrase of sense.translations) {
+        const pivotCandidates = extractPivotLookupCandidates(pivotPhrase, pivotLanguage);
 
-        // Prefer matching POS senses first, fallback to any sense with translations
-        const posMatches = pivotEntry.senses.filter(
-          (ps) => ps.pos === sense.pos && ps.translations.length > 0,
-        );
-        const chosenSenses =
-          posMatches.length > 0
-            ? posMatches
-            : pivotEntry.senses.filter((ps) => ps.translations.length > 0);
+        for (const pivotNorm of pivotCandidates) {
+          const pivotEntry = pivotToTarget.get(pivotNorm);
+          if (!pivotEntry) continue;
 
-        for (const cs of chosenSenses.slice(0, 2)) {
-          for (const tr of cs.translations.slice(0, 3)) {
-            targetTranslations.add(tr);
+          const posMatches = pivotEntry.senses.filter(
+            (ps) => ps.pos === sense.pos && ps.translations.length > 0,
+          );
+          const chosenSenses =
+            posMatches.length > 0
+              ? posMatches
+              : pivotEntry.senses.filter((ps) => ps.translations.length > 0);
+
+          // Rank general everyday senses ahead of narrow parenthetical domain senses like "((computing): ...)"
+          const rankedSenses = [...chosenSenses].sort((a, b) => {
+            const aSpecialized = a.gloss.startsWith('(') ? 1 : 0;
+            const bSpecialized = b.gloss.startsWith('(') ? 1 : 0;
+            return aSpecialized - bSpecialized;
+          });
+
+          for (const cs of rankedSenses.slice(0, 5)) {
+            for (const tr of cs.translations.slice(0, 2)) {
+              targetTranslations.add(tr);
+            }
           }
+          if (targetTranslations.size > 0) break;
         }
       }
 

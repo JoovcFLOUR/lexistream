@@ -57,6 +57,16 @@ document.getElementById('cue-3')?.addEventListener('click', () => {
   seg.textContent = 'Never give up when you look it up in context.';
 });
 
+document.getElementById('cue-4')?.addEventListener('click', () => {
+  simulatedTime = 69.0;
+  seg.textContent = "Aujourd'hui, ce petit territoire souverain et indépendant";
+});
+
+document.getElementById('cue-5')?.addEventListener('click', () => {
+  simulatedTime = 74.2;
+  seg.textContent = 'Cette île est appelée Formosa.';
+});
+
 document.getElementById('cue-off')?.addEventListener('click', () => {
   const isPressed = ccBtn.getAttribute('aria-pressed') === 'true';
   ccBtn.setAttribute('aria-pressed', isPressed ? 'false' : 'true');

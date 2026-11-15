@@ -181,4 +181,76 @@ describe('Wiktionary On-Demand Offline Dictionaries & Live CC BY-SA Provider', (
     expect(res.lemma).toBe('think');
     expect(res.contextual_translation).toContain('pensar');
   });
+
+  it('handles real French Wiktionary lines ({m}, {vt}, nested parens, "to call (out)"), French inflections ("appelée"), default-en auto-fallback to installed fr-pt, and never caches placeholder fallbacks', async () => {
+    const realFrEn = [
+      'appeler {vt} :: to call (out)',
+      'appeler {vt} :: to call, phone, ring',
+      "aujourd'hui {adv} :: today",
+      'indépendant {adj} :: independent',
+      'petit {adj} :: little',
+      'petit {m} :: little one (child) (of humans or other animals)',
+      'petit filet {m} [football] :: side-netting',
+      'souverain {adj} :: sovereign',
+      'souverain {m} :: sovereign',
+    ].join('\n');
+
+    const realEnPt = [
+      'call {v} (to name or refer to) :: chamar',
+      'today {n} (today (noun)) :: hoje',
+      'today {adv} (on the current day) :: hoje',
+      'independent {adj} (free) :: independente',
+      'little {adj} ((of a sibling) younger) :: mais novo',
+      'little {adj} (small in size) :: pequeno',
+      'sovereign {adj} (exercising power of rule) :: soberano',
+    ].join('\n');
+
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('fr-en-enwiktionary.txt')) return new Response(realFrEn, { status: 200 });
+      if (url.includes('en-pt-enwiktionary.txt')) return new Response(realEnPt, { status: 200 });
+      return new Response('Not found', { status: 404 });
+    });
+
+    const store = new WiktionaryDictionaryStore(
+      'test-wikt-fr-pt-real',
+      fetchMock as unknown as typeof fetch,
+    );
+    await store.downloadPack('fr-pt');
+
+    const offlineProvider = new OfflineWiktionaryProvider(store);
+
+    // Even if source_language is still 'en' in user settings, installed fr-pt + French sentence resolves!
+    const souverain = await offlineProvider.translate({
+      word: 'souverain',
+      context: "Aujourd'hui, ce petit territoire souverain et indépendant",
+      source_language: 'en',
+      target_language: 'pt',
+    });
+    expect(souverain.contextual_translation).toContain('soberano');
+
+    const aujourdhui = await offlineProvider.translate({
+      word: "Aujourd'hui",
+      context: "Aujourd'hui, ce petit territoire souverain et indépendant",
+      source_language: 'fr',
+      target_language: 'pt',
+    });
+    expect(aujourdhui.contextual_translation).toContain('hoje');
+
+    const petit = await offlineProvider.translate({
+      word: 'petit',
+      context: "Aujourd'hui, ce petit territoire souverain et indépendant",
+      source_language: 'fr',
+      target_language: 'pt',
+    });
+    expect(petit.contextual_translation).toContain('pequeno');
+
+    const appelee = await offlineProvider.translate({
+      word: 'appelée',
+      context: 'Cette île est appelée Formosa.',
+      source_language: 'fr',
+      target_language: 'pt',
+    });
+    expect(appelee.lemma).toBe('appeler');
+    expect(appelee.contextual_translation).toContain('chamar');
+  });
 });

@@ -8,7 +8,7 @@ const SHADOW_CSS = `
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   .card {
-    pointer-events: auto;
+    pointer-events: none;
     min-width: 240px;
     max-width: 340px;
     background: rgba(15, 23, 42, 0.96);
@@ -182,7 +182,11 @@ export class ShadowTooltipView {
         orig.textContent = state.result.context_sentence;
         ctxBox.appendChild(orig);
 
-        if (state.result.context_translation) {
+        if (
+          state.result.context_translation &&
+          state.result.context_translation.trim().toLowerCase() !==
+            state.result.context_sentence.trim().toLowerCase()
+        ) {
           const tr = this.doc.createElement('div');
           tr.className = 'ctx-trans';
           tr.textContent = state.result.context_translation;
@@ -204,12 +208,15 @@ export class ShadowTooltipView {
     }
     this.container.appendChild(badge);
 
-    // Position above anchor word while clamping within viewport bounds
+    // Position cleanly above the word when room exists above, or below the word near top of viewport
     const left = Math.max(12, Math.min(window.innerWidth - 352, state.anchorRect.left));
-    const top = Math.max(12, state.anchorRect.top - 10);
+    const placeAbove = state.anchorRect.top > 180;
+    const top = placeAbove
+      ? Math.max(12, state.anchorRect.top - 8)
+      : state.anchorRect.bottom + 8;
     this.host.style.left = `${left}px`;
     this.host.style.top = `${top}px`;
-    this.host.style.transform = state.anchorRect.top > 180 ? 'translateY(-100%)' : 'none';
+    this.host.style.transform = placeAbove ? 'translateY(-100%)' : 'none';
     this.host.style.display = 'block';
   }
 

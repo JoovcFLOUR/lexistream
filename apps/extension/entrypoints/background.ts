@@ -14,12 +14,15 @@ import {
   TranslationService,
   WiktionaryDictionaryStore,
 } from '@lexistream/translation-providers';
-import { VocabularyRepository } from '@lexistream/vocabulary-engine';
+import {
+  VocabularyRepository,
+  subscribeLexiStreamEvents,
+} from '@lexistream/vocabulary-engine';
 
 /**
  * Event-driven Manifest V3 Service Worker.
- * Provides shared access to user-downloaded Wiktionary offline dictionaries
- * (`chrome-extension://` IndexedDB) for all YouTube content scripts with zero idle polling.
+ * Provides shared access to user-downloaded Wiktionary offline dictionaries,
+ * settings, and real-time vocabulary updates across YouTube tabs and Dashboard.
  */
 export default defineBackground(() => {
   const repo = new VocabularyRepository();
@@ -43,12 +46,46 @@ export default defineBackground(() => {
     memoryCacheSize: 512,
   });
 
+  subscribeLexiStreamEvents((ev) => {
+    if (ev.type === 'dictionary_changed') {
+      void translationService.clearCaches();
+      void browser.tabs
+        ?.query({ url: '*://*.youtube.com/*' })
+        .then((tabs) => {
+          for (const t of tabs) {
+            if (t.id !== undefined) {
+              void browser.tabs
+                .sendMessage(t.id, { type: 'LEXISTREAM_DICTIONARY_CHANGED' })
+                .catch(() => {});
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  });
+
   browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
     const msg = message as
+      | { type?: 'LEXISTREAM_GET_SETTINGS' }
       | { type?: 'LEXISTREAM_SYNC_NOW' }
       | { type?: 'LEXISTREAM_CAPTURE'; payload?: VocabularyCaptureInput }
       | { type?: 'LEXISTREAM_TRANSLATE'; request?: TranslationRequest }
       | null;
+
+    if (msg?.type === 'LEXISTREAM_GET_SETTINGS') {
+      void (async () => {
+        try {
+          const settings = await repo.getSettings();
+          sendResponse({ ok: true, settings });
+        } catch (err) {
+          sendResponse({
+            ok: false,
+            error: err instanceof Error ? err.message : 'Failed to load settings',
+          });
+        }
+      })();
+      return true;
+    }
 
     if (msg?.type === 'LEXISTREAM_TRANSLATE' && msg.request) {
       const req = msg.request;
@@ -74,6 +111,9 @@ export default defineBackground(() => {
       void (async () => {
         try {
           const saved = await repo.captureVocabulary(payload);
+          void browser.runtime
+            .sendMessage({ type: 'LEXISTREAM_DB_UPDATED' })
+            .catch(() => {});
           sendResponse({ ok: true, id: saved.item.id });
         } catch (err) {
           sendResponse({

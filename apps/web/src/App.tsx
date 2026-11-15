@@ -4,7 +4,10 @@ import {
   type UserSettings,
   type VocabularyItem,
 } from '@lexistream/shared-types';
-import { VocabularyRepository } from '@lexistream/vocabulary-engine';
+import {
+  VocabularyRepository,
+  subscribeLexiStreamEvents,
+} from '@lexistream/vocabulary-engine';
 import {
   WiktionaryDictionaryStore,
   type InstalledDictionaryPack,
@@ -95,6 +98,51 @@ export function App({ repo: injectedRepo, dictionaryStore: injectedDictStore }: 
 
   useEffect(() => {
     void refreshAll();
+
+    const unsubscribeBus = subscribeLexiStreamEvents(() => {
+      void refreshAll();
+    });
+
+    const onFocusOrVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        void refreshAll();
+      }
+    };
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+
+    // Also listen to MV3 extension runtime broadcasts when running inside dashboard.html
+    const extRuntime = (
+      globalThis as unknown as {
+        chrome?: {
+          runtime?: {
+            onMessage?: {
+              addListener: (fn: (msg: unknown) => void) => void;
+              removeListener: (fn: (msg: unknown) => void) => void;
+            };
+          };
+        };
+      }
+    ).chrome?.runtime?.onMessage;
+
+    const onExtMessage = (msg: unknown) => {
+      const m = msg as { type?: string } | null;
+      if (
+        m?.type === 'LEXISTREAM_DB_UPDATED' ||
+        m?.type === 'LEXISTREAM_CAPTURE' ||
+        m?.type === 'LEXISTREAM_DICTIONARY_CHANGED'
+      ) {
+        void refreshAll();
+      }
+    };
+    extRuntime?.addListener(onExtMessage);
+
+    return () => {
+      unsubscribeBus();
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      extRuntime?.removeListener(onExtMessage);
+    };
   }, [refreshAll]);
 
   const seedSamples = async () => {

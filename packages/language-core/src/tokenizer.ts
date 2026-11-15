@@ -18,11 +18,15 @@ const EDGE_PUNCT_PATTERN = /^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu;
 export function normalizeToken(raw: string, language: LanguageCode = 'en'): string {
   const nfc = raw.normalize('NFC').replace(/’/g, "'").trim();
   const stripped = nfc.replace(EDGE_PUNCT_PATTERN, '');
-  try {
-    return stripped.toLocaleLowerCase(language);
-  } catch {
-    return stripped.toLowerCase();
+  const langPrefix = language.slice(0, 2).toLowerCase();
+  if (langPrefix === 'tr' || langPrefix === 'az' || langPrefix === 'lt') {
+    try {
+      return stripped.toLocaleLowerCase(language);
+    } catch {
+      return stripped.toLowerCase();
+    }
   }
+  return stripped.toLowerCase();
 }
 
 /**

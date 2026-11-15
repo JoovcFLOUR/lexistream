@@ -4,6 +4,17 @@ import { App } from './App';
 import { VocabularyRepository } from '@lexistream/vocabulary-engine';
 import { WiktionaryDictionaryStore } from '@lexistream/translation-providers';
 
+async function waitForCondition(
+  predicate: () => boolean,
+  timeoutMs = 2000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 describe('@lexistream/web App', () => {
   it('renders Dashboard, navigates to Vocabulary and Flashcards, edits entries, and completes an FSRS review', async () => {
     const repo = new VocabularyRepository('test-webapp-db-1');
@@ -111,7 +122,11 @@ describe('@lexistream/web App', () => {
     )!;
     expect(dlBtn).toBeTruthy();
     dlBtn.click();
-    await new Promise((r) => setTimeout(r, 80));
+    await waitForCondition(
+      () =>
+        container.querySelector('[data-testid="installed-dicts-count"]')
+          ?.textContent === '1',
+    );
 
     expect(
       container.querySelector('[data-testid="installed-dicts-count"]')?.textContent,
@@ -124,11 +139,56 @@ describe('@lexistream/web App', () => {
     )!;
     expect(rmBtn).toBeTruthy();
     rmBtn.click();
-    await new Promise((r) => setTimeout(r, 60));
+    await waitForCondition(
+      () =>
+        container.querySelector('[data-testid="installed-dicts-count"]')
+          ?.textContent === '0',
+    );
 
     expect(
       container.querySelector('[data-testid="installed-dicts-count"]')?.textContent,
     ).toBe('0');
+
+    render(null, container);
+    container.remove();
+  });
+
+  it('automatically updates Vocabulary count and list in real time without page reload when a new word is captured externally', async () => {
+    const dbName = 'test-webapp-live-reactive-db';
+    const dashboardRepo = new VocabularyRepository(dbName);
+    const youtubeTabRepo = new VocabularyRepository(dbName);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    render(<App repo={dashboardRepo} />, container);
+    await new Promise((r) => setTimeout(r, 40));
+
+    // Switch to Vocabulary tab -> starts with 0 words
+    container.querySelector<HTMLButtonElement>('[data-testid="nav-vocabulary"]')!.click();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(container.textContent).toContain('Vocabulary Library (0)');
+
+    // Capture a word from another repository instance (simulating clicking a subtitle word on YouTube!)
+    await youtubeTabRepo.captureVocabulary({
+      surface_form: 'souverain',
+      lemma: 'souverain',
+      language: 'fr',
+      target_language: 'pt',
+      translation: 'soberano',
+      definition: 'Exercising power of rule.',
+      part_of_speech: 'adjective',
+      context: "Aujourd'hui, ce petit territoire souverain et indépendant",
+      context_translation: '',
+      video_id: 'taiwan_doc',
+      video_title: 'TAÏWAN : la démocratie numérique',
+      video_url: 'https://www.youtube.com/watch?v=taiwan_doc',
+      timestamp: 69,
+    });
+
+    // Without reloading or clicking anything, Dashboard updates automatically!
+    await new Promise((r) => setTimeout(r, 80));
+    expect(container.textContent).toContain('Vocabulary Library (1)');
+    expect(container.textContent).toContain('soberano');
 
     render(null, container);
     container.remove();

@@ -95,6 +95,7 @@ export class TranslationService {
   private readonly memoryCache: BoundedLruCache<TranslationResult>;
   private readonly persistentCache?: TranslationPersistentCache;
   private readonly inFlight = new Map<string, Promise<TranslationResult>>();
+  private broadcastChannel: BroadcastChannel | null = null;
 
   constructor(options: TranslationServiceOptions) {
     if (options.providers.length === 0) {
@@ -103,6 +104,26 @@ export class TranslationService {
     this.providers = options.providers;
     this.memoryCache = new BoundedLruCache<TranslationResult>(options.memoryCacheSize ?? 512);
     this.persistentCache = options.persistentCache;
+
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        this.broadcastChannel = new BroadcastChannel('lexistream-events');
+        this.broadcastChannel.onmessage = (ev: MessageEvent<{ type?: string }>) => {
+          if (ev.data?.type === 'dictionary_changed') {
+            void this.clearCaches();
+          }
+        };
+      } catch {
+        this.broadcastChannel = null;
+      }
+    }
+  }
+
+  async clearCaches(): Promise<void> {
+    this.memoryCache.clear();
+    if (this.persistentCache) {
+      await this.persistentCache.clear();
+    }
   }
 
   async translate(
@@ -116,9 +137,9 @@ export class TranslationService {
     const request = TranslationRequestSchema.parse(rawRequest);
     const cacheKey = buildTranslationCacheKey(request);
 
-    // Tier 1: O(1) Memory LRU Cache
+    // Tier 1: O(1) Memory LRU Cache (ignore stale untranslated fallback entries)
     const memHit = this.memoryCache.get(cacheKey);
-    if (memHit) {
+    if (memHit && memHit.provider !== 'local-fallback-untranslated') {
       return { ...memHit, cached: true };
     }
 
@@ -128,7 +149,7 @@ export class TranslationService {
       if (signal?.aborted) {
         throw new DOMException('Translation request aborted', 'AbortError');
       }
-      if (diskHit) {
+      if (diskHit && diskHit.provider !== 'local-fallback-untranslated') {
         const marked = { ...diskHit, cached: true };
         this.memoryCache.set(cacheKey, marked);
         return marked;
@@ -163,9 +184,12 @@ export class TranslationService {
       }
       try {
         const result = await provider.translate(request, signal);
-        this.memoryCache.set(cacheKey, result);
-        if (this.persistentCache) {
-          await this.persistentCache.set(cacheKey, result);
+        // Never poison persistent or memory cache with untranslated emergency placeholders
+        if (result.provider !== 'local-fallback-untranslated') {
+          this.memoryCache.set(cacheKey, result);
+          if (this.persistentCache) {
+            await this.persistentCache.set(cacheKey, result);
+          }
         }
         return result;
       } catch (err) {

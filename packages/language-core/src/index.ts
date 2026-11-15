@@ -55,6 +55,325 @@ const DOUBLE_CONSONANTS = new Set([
   't',
 ]);
 
+const LANG_STOPWORDS: Record<string, ReadonlySet<string>> = {
+  fr: new Set([
+    "aujourd'hui",
+    'ce',
+    'cet',
+    'cette',
+    'ces',
+    'petit',
+    'dans',
+    'avec',
+    'pour',
+    'pas',
+    'plus',
+    'est',
+    'sont',
+    'une',
+    'des',
+    'les',
+    'aux',
+    'mais',
+    'qui',
+    'sur',
+    'être',
+    'avoir',
+    'nous',
+    'vous',
+    'ils',
+    'elles',
+    'leur',
+    'comme',
+    'tout',
+    'tous',
+    'très',
+    'aussi',
+    'même',
+    'sans',
+    'dont',
+  ]),
+  es: new Set([
+    'el',
+    'los',
+    'las',
+    'una',
+    'unos',
+    'unas',
+    'pero',
+    'para',
+    'como',
+    'muy',
+    'también',
+    'este',
+    'esta',
+    'estos',
+    'estas',
+    'está',
+    'están',
+    'del',
+    'por',
+    'con',
+    'sin',
+    'sobre',
+    'todo',
+    'todos',
+  ]),
+  pt: new Set([
+    'não',
+    'você',
+    'vocês',
+    'está',
+    'estão',
+    'são',
+    'uma',
+    'umas',
+    'com',
+    'isso',
+    'isto',
+    'aquilo',
+    'muito',
+    'também',
+    'pelos',
+    'pelas',
+    'nosso',
+    'nossa',
+  ]),
+  de: new Set([
+    'der',
+    'die',
+    'das',
+    'und',
+    'nicht',
+    'ich',
+    'sie',
+    'wir',
+    'ihr',
+    'ein',
+    'eine',
+    'einer',
+    'mit',
+    'auf',
+    'für',
+    'von',
+    'ist',
+    'sind',
+    'auch',
+    'noch',
+    'aber',
+  ]),
+  it: new Set([
+    'non',
+    'che',
+    'sono',
+    'della',
+    'delle',
+    'degli',
+    'questo',
+    'questa',
+    'anche',
+    'molto',
+    'più',
+    'perché',
+    'gli',
+    'una',
+    'nel',
+    'nella',
+  ]),
+  en: new Set([
+    'the',
+    'and',
+    'that',
+    'this',
+    'with',
+    'would',
+    'should',
+    'could',
+    'never',
+    'always',
+    'have',
+    'has',
+    'from',
+    'they',
+    'what',
+    'when',
+    'where',
+    'which',
+    "don't",
+    "can't",
+    "won't",
+    "it's",
+    "i'm",
+  ]),
+};
+
+/**
+ * Lightweight, zero-dependency subtitle language detector.
+ * Identifies 'fr', 'es', 'pt', 'de', 'it', or 'en' from lexical and orthographic cues.
+ */
+export function detectSubtitleLanguage(
+  text: string,
+  fallback: LanguageCode = 'en',
+): LanguageCode {
+  if (!text || !text.trim()) return fallback;
+  const lower = text.normalize('NFC').replace(/’/g, "'").toLowerCase();
+
+  const scores: Record<string, number> = {
+    en: 0,
+    fr: 0,
+    es: 0,
+    pt: 0,
+    de: 0,
+    it: 0,
+  };
+
+  if (/[¿¡ñ]/.test(lower)) scores.es! += 5;
+  if (/ß|[äöü]/.test(lower)) scores.de! += 4;
+  if (/[ãõ]/.test(lower)) scores.pt! += 5;
+  if (/\b(?:l'|d'|qu'|c'|n'|j'|s'|aujourd'hui)/.test(lower)) scores.fr! += 5;
+  if (/[œæ]|[éèêëàâîïôûùç]/.test(lower)) scores.fr! += 2;
+
+  const words = tokenizeSubtitle(lower, fallback)
+    .filter((t) => t.isWord)
+    .map((t) => t.normalized);
+
+  for (const w of words) {
+    for (const [lang, stopSet] of Object.entries(LANG_STOPWORDS)) {
+      if (stopSet.has(w)) {
+        scores[lang] = (scores[lang] ?? 0) + 3;
+      }
+    }
+  }
+
+  let bestLang = fallback.slice(0, 2).toLowerCase();
+  let bestScore = scores[bestLang] ?? 0;
+
+  for (const [lang, sc] of Object.entries(scores)) {
+    if (sc > bestScore) {
+      bestScore = sc;
+      bestLang = lang;
+    }
+  }
+
+  return bestScore >= 2 ? bestLang : fallback;
+}
+
+const FRENCH_ELISION_PREFIX = /^(?:qu'|l'|d'|n'|c'|j'|s'|m'|t')(.{2,})$/i;
+
+export function stripFrenchElision(word: string): string {
+  const normalized = word.normalize('NFC').replace(/’/g, "'").trim();
+  const match = FRENCH_ELISION_PREFIX.exec(normalized);
+  return match?.[1] ? match[1] : normalized;
+}
+
+/**
+ * Generates ordered lemma candidates (most specific first) for inflected words
+ * in French, Spanish, Portuguese, Italian, German, and English.
+ */
+export function generateLemmaCandidates(
+  surfaceOrNorm: string,
+  language: LanguageCode = 'en',
+): string[] {
+  const lang = language.slice(0, 2).toLowerCase();
+  let norm = normalizeToken(surfaceOrNorm, lang);
+  if (!norm) return [];
+
+  const out: string[] = [];
+  const push = (w: string) => {
+    if (w && w.length >= 2 && !out.includes(w)) {
+      out.push(w);
+    }
+  };
+
+  push(norm);
+
+  if (lang === 'fr') {
+    const unelided = stripFrenchElision(norm).toLowerCase();
+    if (unelided !== norm) {
+      norm = unelided;
+      push(norm);
+    }
+
+    // Past participles -> -er / -ir infinitives (e.g. appelée -> appeler, parlés -> parler)
+    for (const suffix of ['ées', 'és', 'ée', 'é']) {
+      if (norm.endsWith(suffix) && norm.length > suffix.length + 2) {
+        push(`${norm.slice(0, -suffix.length)}er`);
+      }
+    }
+    for (const suffix of ['ies', 'ie', 'is']) {
+      if (norm.endsWith(suffix) && norm.length > suffix.length + 2) {
+        push(`${norm.slice(0, -suffix.length)}ir`);
+      }
+    }
+    if (norm.endsWith('ant') && norm.length > 5) {
+      push(`${norm.slice(0, -3)}er`);
+    }
+
+    // Adverbs & plural/feminine adjectives/nouns
+    if (norm.endsWith('aux') && norm.length > 4) {
+      push(`${norm.slice(0, -3)}al`);
+    }
+    if (norm.endsWith('euses') && norm.length > 6) {
+      push(`${norm.slice(0, -5)}eux`);
+    }
+    if (norm.endsWith('euse') && norm.length > 5) {
+      push(`${norm.slice(0, -4)}eux`);
+    }
+    if (norm.endsWith('ives') && norm.length > 5) {
+      push(`${norm.slice(0, -4)}if`);
+    }
+    if (norm.endsWith('ive') && norm.length > 4) {
+      push(`${norm.slice(0, -3)}if`);
+    }
+    if (norm.endsWith('iennes') && norm.length > 7) {
+      push(`${norm.slice(0, -6)}ien`);
+    }
+    if (norm.endsWith('ienne') && norm.length > 6) {
+      push(`${norm.slice(0, -5)}ien`);
+    }
+    if (norm.endsWith('es') && norm.length > 4) {
+      push(norm.slice(0, -1)); // numériques -> numérique
+      push(norm.slice(0, -2)); // indépendantes -> indépendant, petites -> petit
+    }
+    if ((norm.endsWith('s') || norm.endsWith('x')) && norm.length > 3) {
+      push(norm.slice(0, -1)); // souverains -> souverain
+    }
+    if (norm.endsWith('e') && norm.length > 3) {
+      push(norm.slice(0, -1)); // indépendante -> indépendant, petite -> petit
+    }
+    return out;
+  }
+
+  if (lang === 'pt' || lang === 'es' || lang === 'it') {
+    for (const suffix of ['ados', 'adas', 'ado', 'ada']) {
+      if (norm.endsWith(suffix) && norm.length > suffix.length + 2) {
+        push(`${norm.slice(0, -suffix.length)}ar`);
+      }
+    }
+    for (const suffix of ['idos', 'idas', 'ido', 'ida']) {
+      if (norm.endsWith(suffix) && norm.length > suffix.length + 2) {
+        push(`${norm.slice(0, -suffix.length)}er`);
+        push(`${norm.slice(0, -suffix.length)}ir`);
+      }
+    }
+    if ((norm.endsWith('ando') || norm.endsWith('endo') || norm.endsWith('indo')) && norm.length > 5) {
+      const stem = norm.slice(0, -4);
+      push(`${stem}${norm.endsWith('ando') ? 'ar' : norm.endsWith('endo') ? 'er' : 'ir'}`);
+    }
+    if (norm.endsWith('es') && norm.length > 4) push(norm.slice(0, -2));
+    if (norm.endsWith('s') && norm.length > 3) push(norm.slice(0, -1));
+    if (norm.endsWith('a') && norm.length > 3) push(`${norm.slice(0, -1)}o`);
+    return out;
+  }
+
+  if (lang === 'en') {
+    const stemmed = stemRegularEnglish(norm);
+    push(stemmed.lemma);
+  }
+
+  return out;
+}
+
 function stemRegularEnglish(word: string): { lemma: string; pos: PartOfSpeech } {
   if (DETERMINERS.has(word)) return { lemma: word, pos: 'determiner' };
   if (PRONOUN_SUBJECTS.has(word)) return { lemma: word, pos: 'pronoun' };
@@ -138,7 +457,22 @@ function stemRomanceOrOther(
   word: string,
   language: LanguageCode,
 ): { lemma: string; pos: PartOfSpeech } {
-  if (language.startsWith('pt') || language.startsWith('es')) {
+  const lang = language.slice(0, 2).toLowerCase();
+
+  if (lang === 'fr') {
+    const unelided = stripFrenchElision(word).toLowerCase();
+    for (const suffix of ['ées', 'és', 'ée', 'é']) {
+      if (unelided.endsWith(suffix) && unelided.length > suffix.length + 2) {
+        return { lemma: `${unelided.slice(0, -suffix.length)}er`, pos: 'verb' };
+      }
+    }
+    if (unelided.endsWith('ment') && unelided.length > 6) {
+      return { lemma: unelided, pos: 'adverb' };
+    }
+    return { lemma: unelided, pos: 'other' };
+  }
+
+  if (lang === 'pt' || lang === 'es') {
     if (word.endsWith('mente') && word.length > 7) {
       return { lemma: word.slice(0, -5), pos: 'adverb' };
     }
@@ -176,7 +510,6 @@ export function detectPhrasesInTokens(
     const allowedParticles = PHRASAL_VERBS[baseVerb];
     if (!allowedParticles) continue;
 
-    // Look ahead 1 word (contiguous: "give up") or 2 words across a pronoun/short noun ("look it up")
     for (let offset = 1; offset <= 2 && w + offset < wordIndices.length; offset++) {
       const candidateIdx = wordIndices[w + offset]!;
       const candidate = result[candidateIdx]!;
@@ -250,7 +583,6 @@ export function lemmatizeInContext(
     const prev1 = targetIdx > 0 ? words[targetIdx - 1]!.normalized : '';
     const prev2 = targetIdx > 1 ? words[targetIdx - 2]!.normalized : '';
 
-    // Noun cue: preceded by determiner ("a thought", "the bank") or determiner + adjective ("a fascinating thought")
     if (
       DETERMINERS.has(prev1) ||
       PREPOSITIONS.has(prev1) ||
@@ -264,7 +596,6 @@ export function lemmatizeInContext(
       };
     }
 
-    // Verb cue: preceded by pronoun subject ("I thought") or subject + adverb/auxiliary ("I never thought", "to book")
     if (
       PRONOUN_SUBJECTS.has(prev1) ||
       AUXILIARIES_AND_ADVERBS.has(prev1) ||

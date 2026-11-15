@@ -1,6 +1,10 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { browser } from 'wxt/browser';
-import type { TranslationRequest, TranslationResult } from '@lexistream/shared-types';
+import type {
+  TranslationRequest,
+  TranslationResult,
+  UserSettings,
+} from '@lexistream/shared-types';
 import {
   ContextualLexicalProvider,
   IndexedDbTranslationCache,
@@ -10,7 +14,10 @@ import {
   WiktionaryDictionaryStore,
   type TranslationProvider,
 } from '@lexistream/translation-providers';
-import { VocabularyRepository } from '@lexistream/vocabulary-engine';
+import {
+  VocabularyRepository,
+  emitLexiStreamEvent,
+} from '@lexistream/vocabulary-engine';
 import { InteractiveSubtitleController } from '../modules/interaction/subtitle-controller';
 
 class ExtensionBackgroundDictionaryBridge implements TranslationProvider {
@@ -40,7 +47,18 @@ export default defineContentScript({
   runAt: 'document_idle',
   async main(ctx) {
     const vocabularyRepo = new VocabularyRepository();
-    const settings = await vocabularyRepo.getSettings();
+    let settings: UserSettings;
+
+    try {
+      const bgSettings = (await browser.runtime.sendMessage({
+        type: 'LEXISTREAM_GET_SETTINGS',
+      })) as { ok?: boolean; settings?: UserSettings } | undefined;
+      settings = bgSettings?.ok && bgSettings.settings
+        ? bgSettings.settings
+        : await vocabularyRepo.getSettings();
+    } catch {
+      settings = await vocabularyRepo.getSettings();
+    }
 
     if (!settings.enable_interactive_captions) {
       return;
@@ -57,6 +75,15 @@ export default defineContentScript({
       memoryCacheSize: 512,
     });
 
+    const onBgMessage = (msg: unknown) => {
+      const m = msg as { type?: string } | null;
+      if (m?.type === 'LEXISTREAM_DICTIONARY_CHANGED') {
+        void translationService.clearCaches();
+        emitLexiStreamEvent({ type: 'dictionary_changed' });
+      }
+    };
+    browser.runtime.onMessage.addListener(onBgMessage);
+
     const controller = new InteractiveSubtitleController({
       translationService,
       vocabularyRepo,
@@ -72,6 +99,7 @@ export default defineContentScript({
 
     controller.start();
     ctx.onInvalidated(() => {
+      browser.runtime.onMessage.removeListener(onBgMessage);
       controller.stop();
     });
   },

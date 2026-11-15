@@ -84,6 +84,57 @@ export function buildNormalizedVocabularyKey(
   return `${language.toLowerCase()}::${normalizeToken(lemma, language)}::${partOfSpeech}`;
 }
 
+export interface LexiStreamDbEvent {
+  type: 'vocabulary_changed' | 'dictionary_changed' | 'settings_changed';
+  dbName?: string;
+}
+
+export function emitLexiStreamEvent(event: LexiStreamDbEvent): void {
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const ch = new BroadcastChannel('lexistream-events');
+      ch.postMessage(event);
+      ch.close();
+    }
+    if (typeof globalThis.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+      globalThis.dispatchEvent(new CustomEvent('lexistream:events', { detail: event }));
+    }
+  } catch {
+    // Ignore in restricted runtimes
+  }
+}
+
+export function subscribeLexiStreamEvents(
+  listener: (event: LexiStreamDbEvent) => void,
+): () => void {
+  let ch: BroadcastChannel | null = null;
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      ch = new BroadcastChannel('lexistream-events');
+      ch.onmessage = (ev: MessageEvent<LexiStreamDbEvent>) => {
+        if (ev.data?.type) listener(ev.data);
+      };
+    } catch {
+      ch = null;
+    }
+  }
+
+  const domHandler = (ev: Event) => {
+    const detail = (ev as CustomEvent<LexiStreamDbEvent>).detail;
+    if (detail?.type) listener(detail);
+  };
+  if (typeof globalThis.addEventListener === 'function') {
+    globalThis.addEventListener('lexistream:events', domHandler);
+  }
+
+  return () => {
+    ch?.close();
+    if (typeof globalThis.removeEventListener === 'function') {
+      globalThis.removeEventListener('lexistream:events', domHandler);
+    }
+  };
+}
+
 export class VocabularyRepository {
   private dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -197,6 +248,7 @@ export class VocabularyRepository {
     };
     outboxStore.put(outboxEntry);
     await idbTxComplete(tx);
+    emitLexiStreamEvent({ type: 'vocabulary_changed', dbName: this.dbName });
 
     return { item: savedItem, created };
   }
@@ -213,16 +265,21 @@ export class VocabularyRepository {
 
   async findMatchingEntries(
     surfaceOrLemma: string,
-    language: LanguageCode = 'en',
+    language?: LanguageCode,
   ): Promise<VocabularyItem[]> {
-    const norm = normalizeToken(surfaceOrLemma, language);
+    const norm = normalizeToken(surfaceOrLemma, language ?? 'en');
     if (!norm) return [];
-    const all = await this.queryVocabulary({ language });
-    return all.filter(
+    const all = await this.queryVocabulary({});
+    const matches = all.filter(
       (item) =>
         item.lemma === norm ||
-        item.surface_forms.some((sf) => normalizeToken(sf, language) === norm),
+        item.surface_forms.some((sf) => normalizeToken(sf, item.language) === norm),
     );
+    if (language) {
+      const exactLang = matches.filter((m) => m.language === language);
+      if (exactLang.length > 0) return exactLang;
+    }
+    return matches;
   }
 
   async queryVocabulary(query: VocabularyQuery = {}): Promise<VocabularyItem[]> {
@@ -295,6 +352,7 @@ export class VocabularyRepository {
     } satisfies OutboxRecord);
 
     await idbTxComplete(tx);
+    emitLexiStreamEvent({ type: 'vocabulary_changed', dbName: this.dbName });
     return updated;
   }
 
@@ -321,6 +379,7 @@ export class VocabularyRepository {
     } satisfies OutboxRecord);
 
     await idbTxComplete(tx);
+    emitLexiStreamEvent({ type: 'vocabulary_changed', dbName: this.dbName });
   }
 
   async putFlashcard(card: FlashcardRecord, queueSync = true): Promise<void> {
@@ -337,6 +396,7 @@ export class VocabularyRepository {
       } satisfies OutboxRecord);
     }
     await idbTxComplete(tx);
+    emitLexiStreamEvent({ type: 'vocabulary_changed', dbName: this.dbName });
   }
 
   async getFlashcardByVocabularyId(
@@ -370,6 +430,7 @@ export class VocabularyRepository {
       } satisfies OutboxRecord);
     }
     await idbTxComplete(tx);
+    emitLexiStreamEvent({ type: 'vocabulary_changed', dbName: this.dbName });
   }
 
   async getAllReviewLogs(): Promise<ReviewLogRecord[]> {
@@ -397,6 +458,7 @@ export class VocabularyRepository {
     const tx = db.transaction(STORES.SETTINGS, 'readwrite');
     tx.objectStore(STORES.SETTINGS).put({ key: 'user_settings', value: next });
     await idbTxComplete(tx);
+    emitLexiStreamEvent({ type: 'settings_changed', dbName: this.dbName });
     return next;
   }
 
@@ -548,6 +610,7 @@ export class VocabularyRepository {
     tx.objectStore(STORES.SYNC_OUTBOX).clear();
     tx.objectStore(STORES.SETTINGS).clear();
     await idbTxComplete(tx);
+    emitLexiStreamEvent({ type: 'vocabulary_changed', dbName: this.dbName });
   }
 
   async getPendingSyncCount(): Promise<number> {
