@@ -120,6 +120,7 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
       providers: [new ContextualLexicalProvider()],
     });
 
+    const capturedPayloads: Array<{ lemma: string; video_id: string }> = [];
     const controller = new InteractiveSubtitleController({
       rootDocument: document,
       locationHref: () => 'https://www.youtube.com/watch?v=vid_yt_mvp',
@@ -128,6 +129,9 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
       sourceLanguage: 'en',
       targetLanguage: 'pt',
       hoverDebounceMs: 15,
+      onVocabularyCaptured: (payload) => {
+        capturedPayloads.push({ lemma: payload.lemma, video_id: payload.video_id });
+      },
     });
 
     controller.start();
@@ -171,6 +175,7 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
     await new Promise((r) => setTimeout(r, 45));
 
     expect(thoughtSpan.dataset.saved).toBe('true');
+    expect(capturedPayloads).toEqual([{ lemma: 'think', video_id: 'vid_yt_mvp' }]);
     const savedItems = await repo.queryVocabulary({});
     expect(savedItems).toHaveLength(1);
     expect(savedItems[0]?.lemma).toBe('think');

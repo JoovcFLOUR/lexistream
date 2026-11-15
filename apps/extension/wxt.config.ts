@@ -34,6 +34,10 @@ export default defineConfig({
           __dirname,
           '../../packages/vocabulary-engine/src/index.ts',
         ),
+        '@lexistream/flashcard-engine': path.resolve(
+          __dirname,
+          '../../packages/flashcard-engine/src/index.ts',
+        ),
       },
     },
   }),

@@ -1,5 +1,6 @@
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
+import { browser } from 'wxt/browser';
 import {
   buildYouTubeTimestampUrl,
   type UserSettings,
@@ -90,7 +91,10 @@ export function PopupApp() {
       <button
         type="button"
         class="btn-primary"
-        onClick={() => window.open('http://127.0.0.1:4173', '_blank', 'noopener')}
+        onClick={() => {
+          const dashboardUrl = browser.runtime.getURL('/dashboard.html');
+          window.open(dashboardUrl, '_blank', 'noopener');
+        }}
       >
         Open Study Dashboard
       </button>

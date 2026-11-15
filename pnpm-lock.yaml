@@ -196,6 +196,9 @@ importers:
 
   apps/extension:
     dependencies:
+      '@lexistream/flashcard-engine':
+        specifier: workspace:*
+        version: link:../../packages/flashcard-engine
       '@lexistream/language-core':
         specifier: workspace:*
         version: link:../../packages/language-core

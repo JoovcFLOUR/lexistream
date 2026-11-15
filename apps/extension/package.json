@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@lexistream/flashcard-engine": "workspace:*",
     "@lexistream/language-core": "workspace:*",
     "@lexistream/shared-types": "workspace:*",
     "@lexistream/translation-providers": "workspace:*",

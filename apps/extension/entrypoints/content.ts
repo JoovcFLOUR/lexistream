@@ -1,4 +1,5 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
+import { browser } from 'wxt/browser';
 import {
   BackendProxyTranslationProvider,
   ContextualLexicalProvider,
@@ -38,6 +39,13 @@ export default defineContentScript({
       sourceLanguage: settings.source_language,
       targetLanguage: settings.target_language,
       hoverDebounceMs: settings.hover_debounce_ms,
+      onVocabularyCaptured: (payload) => {
+        // Mirror captured YouTube word to the extension's chrome-extension:// IndexedDB
+        // so Popup and built-in Study Dashboard immediately display all saved words offline!
+        void browser.runtime
+          .sendMessage({ type: 'LEXISTREAM_CAPTURE', payload })
+          .catch(() => {});
+      },
     });
 
     controller.start();

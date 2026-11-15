@@ -1,4 +1,8 @@
-import type { LanguageCode, TranslationResult } from '@lexistream/shared-types';
+import type {
+  LanguageCode,
+  TranslationResult,
+  VocabularyCaptureInput,
+} from '@lexistream/shared-types';
 import {
   detectPhrasesInTokens,
   extractSentenceForToken,
@@ -22,6 +26,7 @@ export interface InteractiveSubtitleControllerOptions {
   sourceLanguage?: LanguageCode;
   targetLanguage?: LanguageCode;
   hoverDebounceMs?: number;
+  onVocabularyCaptured?: (payload: VocabularyCaptureInput) => void;
 }
 
 const OVERLAY_STYLE_ID = 'lexistream-player-overlay-style';
@@ -88,6 +93,7 @@ export class InteractiveSubtitleController {
   private sourceLanguage: LanguageCode;
   private targetLanguage: LanguageCode;
   private readonly hoverDebounceMs: number;
+  private readonly onVocabularyCaptured?: (payload: VocabularyCaptureInput) => void;
 
   private readonly adapter: YouTubeCaptionAdapter;
   private tooltip: ShadowTooltipView | null = null;
@@ -113,6 +119,7 @@ export class InteractiveSubtitleController {
     this.sourceLanguage = options.sourceLanguage ?? 'en';
     this.targetLanguage = options.targetLanguage ?? 'pt';
     this.hoverDebounceMs = options.hoverDebounceMs ?? 120;
+    this.onVocabularyCaptured = options.onVocabularyCaptured;
 
     this.boundPointerOver = (ev) => this.handleDelegatedHover(ev);
     this.boundPointerOut = (ev) => this.handleDelegatedOut(ev);
@@ -389,7 +396,7 @@ export class InteractiveSubtitleController {
         ? videoEl.currentTime
         : videoMeta.currentTime;
 
-    await this.vocabularyRepo.captureVocabulary({
+    const capturePayload: VocabularyCaptureInput = {
       surface_form: token.text,
       lemma: translation.lemma,
       language: this.sourceLanguage,
@@ -404,7 +411,10 @@ export class InteractiveSubtitleController {
       video_url: videoMeta.videoUrl,
       timestamp: exactTimestamp,
       additional_meanings: translation.meanings,
-    });
+    };
+
+    await this.vocabularyRepo.captureVocabulary(capturePayload);
+    this.onVocabularyCaptured?.(capturePayload);
 
     this.savedNormalizedSet.add(translation.lemma.toLowerCase());
     this.savedNormalizedSet.add(token.normalized);
