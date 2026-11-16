@@ -274,6 +274,28 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
     expect(playSpy).not.toHaveBeenCalled();
     expect(isPaused).toBe(true);
 
+    // 5. Clicking a native Play/Pause toggle button while auto-paused must NOT cancel out (pointerdown + click)
+    isPaused = false;
+    const playToggleBtn = document.createElement('button');
+    playToggleBtn.className = 'ytp-play-button';
+    playToggleBtn.addEventListener('click', () => {
+      if (isPaused) {
+        void video.play();
+      } else {
+        video.pause();
+      }
+    });
+    document.body.appendChild(playToggleBtn);
+
+    // Hover word -> auto-pauses video
+    thoughtSpan.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    expect(isPaused).toBe(true);
+
+    // User clicks playToggleBtn (fires pointerdown then click) -> must end PLAYING (isPaused === false)!
+    playToggleBtn.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    playToggleBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(isPaused).toBe(false);
+
     controller.stop();
   });
 });

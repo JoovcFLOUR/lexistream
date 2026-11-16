@@ -167,7 +167,21 @@ export class InteractiveSubtitleController {
       if (!target?.closest?.('[data-lexistream-overlay="true"]')) {
         this.cancelPendingHover();
         this.tooltip?.hide();
-        this.resumeIfAutoPaused();
+
+        const isInteractiveControl = Boolean(
+          target?.closest?.(
+            'video, .ytp-play-button, .ytp-chrome-bottom, button, [role="button"], a, input, select, textarea',
+          ),
+        );
+        if (isInteractiveControl) {
+          // Hand playback state over cleanly to the native control's own click handler
+          this.cancelPendingResume();
+          this.autoPausedByHover = false;
+          const bar = this.overlayRoot?.querySelector<HTMLElement>('.lexistream-caption-bar');
+          if (bar) delete bar.dataset.autopause;
+        } else {
+          this.resumeIfAutoPaused();
+        }
       }
     };
     this.boundDocKeyDown = (ev) => {

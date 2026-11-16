@@ -283,7 +283,7 @@ export function DictionariesPage({
             >
               {installedPacks.map((p) => (
                 <option key={p.pairId} value={p.pairId}>
-                  {p.pairId.toUpperCase()} — {p.title.split(' (')[0]} ({p.entryCount.toLocaleString()})
+                  {p.pairId.toUpperCase()} — {p.title.split(' (')[0]} ({p.entryCount.toLocaleString()} headwords)
                 </option>
               ))}
             </select>
