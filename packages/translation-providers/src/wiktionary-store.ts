@@ -77,7 +77,7 @@ export const WIKTIONARY_DICTIONARY_CATALOG: readonly WiktionaryCatalogEntry[] = 
     targetLanguage: 'pt',
     title: 'French → Portuguese (Francês → Português)',
     estimatedSizeMb: 5.0,
-    estimatedEntries: 27400,
+    estimatedEntries: 21000,
     license: 'CC BY-SA 3.0 / 4.0 (Wiktionary)',
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
     attributionUrl: 'https://en.wiktionary.org/',

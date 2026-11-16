@@ -26,7 +26,6 @@ export function DictionariesPage({
   const [removingByPair, setRemovingByPair] = useState<Record<string, boolean>>({});
   const [errorBanner, setErrorBanner] = useState('');
 
-  // Quick offline tester state
   const [testPairId, setTestPairId] = useState('');
   const [testWord, setTestWord] = useState('');
   const [testResult, setTestResult] = useState<TranslationResult | null>(null);
@@ -48,7 +47,7 @@ export function DictionariesPage({
       await onChanged();
     } catch (err) {
       setErrorBanner(
-        `Falha ao baixar ${pairId}: ${err instanceof Error ? err.message : 'Erro de rede'}`,
+        `Failed to download ${pairId}: ${err instanceof Error ? err.message : 'Network error'}`,
       );
     } finally {
       setProgressByPair((prev) => {
@@ -64,9 +63,8 @@ export function DictionariesPage({
     setRemovingByPair((prev) => ({ ...prev, [pairId]: true }));
     try {
       await dictionaryStore.removePack(pairId);
-      if (testPairId === pairId) {
-        setTestResult(null);
-      }
+      setTestResult(null);
+      setTestError('');
       await onChanged();
     } finally {
       setRemovingByPair((prev) => {
@@ -95,7 +93,7 @@ export function DictionariesPage({
       });
       setTestResult(res);
     } catch (err) {
-      setTestError(err instanceof Error ? err.message : 'Palavra não encontrada');
+      setTestError(err instanceof Error ? err.message : 'Word not found in installed pack');
     }
   };
 
@@ -115,24 +113,24 @@ export function DictionariesPage({
           <div class="kpi-value" data-testid="installed-dicts-count">
             {installedPacks.length}
           </div>
-          <div class="kpi-label">Dicionários Instalados</div>
+          <div class="kpi-label">Installed Dictionaries</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-value">{totalEntries.toLocaleString()}</div>
-          <div class="kpi-label">Verbetes Offline (Wiktionary)</div>
+          <div class="kpi-label">Offline Headwords (Wiktionary)</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-value">{totalMb} MB</div>
-          <div class="kpi-label">Espaço Local Usado</div>
+          <div class="kpi-label">Local Storage Used</div>
         </div>
       </section>
 
       <section class="panel">
-        <h2>Dicionários Offline Sob Demanda — Wiktionary (Creative Commons)</h2>
+        <h2>On-Demand Offline Dictionaries — Wiktionary (Creative Commons)</h2>
         <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginTop: 0 }}>
-          Nenhum dicionário pesado vem pré-instalado para economizar memória e disco. Escolha
-          apenas os pares de idiomas que você realmente estuda e clique em{' '}
-          <strong>Baixar Dicionário</strong>. Os dados vêm do{' '}
+          Zero dictionaries come pre-installed to keep memory and storage minimal. Click{' '}
+          <strong>Download</strong> only on the language pairs you actively study. All data is
+          derived from{' '}
           <a
             href="https://www.wiktionary.org/"
             target="_blank"
@@ -141,7 +139,7 @@ export function DictionariesPage({
           >
             Wiktionary
           </a>{' '}
-          sob licença livre{' '}
+          under the{' '}
           <a
             href="https://creativecommons.org/licenses/by-sa/4.0/"
             target="_blank"
@@ -150,7 +148,7 @@ export function DictionariesPage({
           >
             CC BY-SA
           </a>{' '}
-          e funcionam 100% offline nas legendas do YouTube após instalados.
+          license and works 100% offline on YouTube subtitles once installed.
         </p>
 
         {errorBanner && (
@@ -173,8 +171,8 @@ export function DictionariesPage({
         <div style={{ marginBottom: '16px', maxWidth: '420px' }}>
           <input
             type="search"
-            aria-label="Filtrar dicionários disponíveis"
-            placeholder="Filtrar idioma (ex: Inglês, Francês, Português, fr-pt)…"
+            aria-label="Filter available dictionaries"
+            placeholder="Filter language pair (e.g. English, French, Portuguese, fr-pt)…"
             value={filterText}
             onInput={(e) => setFilterText((e.target as HTMLInputElement).value)}
           />
@@ -205,7 +203,7 @@ export function DictionariesPage({
                           color: 'var(--success)',
                         }}
                       >
-                        ✓ Instalado ({installed.entryCount.toLocaleString()} verbetes)
+                        ✓ Installed ({installed.entryCount.toLocaleString()} headwords)
                       </span>
                     )}
                   </div>
@@ -248,10 +246,10 @@ export function DictionariesPage({
                   }}
                 >
                   <span>
-                    ~{item.estimatedEntries.toLocaleString()} entradas · ~{item.estimatedSizeMb}{' '}
+                    ~{item.estimatedEntries.toLocaleString()} headwords · ~{item.estimatedSizeMb}{' '}
                     MB download
                   </span>
-                  <span>Licença: {item.license}</span>
+                  <span>License: {item.license}</span>
                 </div>
 
                 {activeProgress && (
@@ -275,22 +273,23 @@ export function DictionariesPage({
 
       {installedPacks.length > 0 && (
         <section class="panel" aria-label="Test installed offline dictionary">
-          <h2>Testar Consulta Offline Instantânea</h2>
+          <h2>Test Instant Offline Lookup</h2>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <select
-              style={{ maxWidth: '340px', minWidth: '260px' }}
+              aria-label="Installed dictionary pair"
+              style={{ width: 'auto', minWidth: '220px', maxWidth: '100%' }}
               value={testPairId || installedPacks[0]?.pairId || ''}
               onChange={(e) => setTestPairId((e.target as HTMLSelectElement).value)}
             >
               {installedPacks.map((p) => (
                 <option key={p.pairId} value={p.pairId}>
-                  {p.pairId.toUpperCase()} — {p.title}
+                  {p.pairId.toUpperCase()} ({p.entryCount.toLocaleString()} headwords)
                 </option>
               ))}
             </select>
             <input
               style={{ maxWidth: '260px' }}
-              placeholder="Digite uma palavra (ex: butterfly, bonjour)…"
+              placeholder="Type a word (e.g. souverain, parlons)…"
               value={testWord}
               onInput={(e) => setTestWord((e.target as HTMLInputElement).value)}
             />
@@ -299,7 +298,7 @@ export function DictionariesPage({
               class="btn btn-primary"
               onClick={() => void handleQuickLookup()}
             >
-              Consultar Offline
+              Lookup Offline
             </button>
           </div>
 

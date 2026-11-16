@@ -83,6 +83,12 @@ const CORE_FRENCH_GRAMMAR: Record<string, CoreGrammarSense> = {
     translations: { pt: 'devolver, tornar, entregar', en: 'to return, make, render', es: 'devolver, volver' },
     definition: 'To give back, return, or cause to become.',
   },
+  pays: {
+    lemma: 'pays',
+    pos: 'noun',
+    translations: { pt: 'país, nação, terra', en: 'country, nation, land', es: 'país, nación' },
+    definition: 'Country, sovereign state, or territory.',
+  },
 };
 
 export class OfflineWiktionaryProvider implements TranslationProvider {

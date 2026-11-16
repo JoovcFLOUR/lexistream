@@ -180,4 +180,35 @@ describe('@lexistream/translation-providers', () => {
       ),
     ).rejects.toThrow(/abort/i);
   });
+
+  it('separates translation cache keys by word_offset when the same particle ("up") appears in two different phrasal verbs in one sentence', async () => {
+    const service = new TranslationService({
+      providers: [new ContextualLexicalProvider()],
+      memoryCacheSize: 64,
+    });
+
+    const cue = 'Never give up when you look it up in context.';
+    const firstUpOffset = cue.indexOf('up when');
+    const secondUpOffset = cue.indexOf('up in context');
+
+    const firstUp = await service.translate({
+      word: 'up',
+      context: cue,
+      source_language: 'en',
+      target_language: 'pt',
+      word_offset: firstUpOffset,
+    });
+    expect(firstUp.lemma).toBe('give up');
+    expect(firstUp.contextual_translation).toBe('desistir');
+
+    const secondUp = await service.translate({
+      word: 'up',
+      context: cue,
+      source_language: 'en',
+      target_language: 'pt',
+      word_offset: secondUpOffset,
+    });
+    expect(secondUp.lemma).toBe('look up');
+    expect(secondUp.contextual_translation).toBe('consultar / pesquisar');
+  });
 });

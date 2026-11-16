@@ -42,7 +42,8 @@ const OVERLAY_CSS = `
     bottom: 11%;
     transform: translateX(-50%);
     z-index: 65;
-    max-width: 82%;
+    width: max-content;
+    max-width: 86%;
     text-align: center;
     pointer-events: none;
     font-family: "YouTube Noto", Roboto, Arial, Helvetica, sans-serif;

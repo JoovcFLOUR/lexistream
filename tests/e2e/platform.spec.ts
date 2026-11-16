@@ -164,7 +164,7 @@ test.describe('LexiStream End-to-End Browser & Backend Sync Suite', () => {
     // Click download on Inglês -> Português
     await page.getByTestId('download-dict-en-pt').click();
     await expect(page.getByTestId('installed-dicts-count')).toHaveText('1');
-    await expect(page.getByTestId('dict-card-en-pt')).toContainText('Instalado');
+    await expect(page.getByTestId('dict-card-en-pt')).toContainText('Installed');
 
     // Verify YouTube subtitle hover immediately uses the newly downloaded offline Wiktionary pack
     await page.goto('/youtube-fixture.html');

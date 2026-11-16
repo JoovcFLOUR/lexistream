@@ -131,7 +131,7 @@ describe('@lexistream/web App', () => {
     expect(
       container.querySelector('[data-testid="installed-dicts-count"]')?.textContent,
     ).toBe('1');
-    expect(container.textContent).toContain('Instalado');
+    expect(container.textContent).toContain('Installed');
 
     // Click Remove on en-pt -> frees storage back to 0
     const rmBtn = container.querySelector<HTMLButtonElement>(

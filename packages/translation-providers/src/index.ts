@@ -80,7 +80,8 @@ function hashContext(context: string): string {
 export function buildTranslationCacheKey(req: TranslationRequest): string {
   const normWord = normalizeToken(req.word, req.source_language);
   const ctxHash = hashContext(req.context);
-  return `${req.source_language}:${req.target_language}:${normWord}:${ctxHash}`;
+  const offsetPart = req.word_offset !== undefined ? `:${req.word_offset}` : '';
+  return `${req.source_language}:${req.target_language}:${normWord}:${ctxHash}${offsetPart}`;
 }
 
 function isAbortError(err: unknown): boolean {
