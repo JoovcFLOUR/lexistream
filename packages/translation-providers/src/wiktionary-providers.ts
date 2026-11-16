@@ -89,6 +89,12 @@ const CORE_FRENCH_GRAMMAR: Record<string, CoreGrammarSense> = {
     translations: { pt: 'país, nação, terra', en: 'country, nation, land', es: 'país, nación' },
     definition: 'Country, sovereign state, or territory.',
   },
+  libre: {
+    lemma: 'libre',
+    pos: 'adjective',
+    translations: { pt: 'livre, independente', en: 'free', es: 'libre' },
+    definition: 'Free; not under the control or domination of another.',
+  },
 };
 
 export class OfflineWiktionaryProvider implements TranslationProvider {

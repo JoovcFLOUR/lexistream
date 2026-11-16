@@ -30,6 +30,8 @@ export interface InteractiveSubtitleControllerOptions {
   sourceLanguage?: LanguageCode;
   targetLanguage?: LanguageCode;
   hoverDebounceMs?: number;
+  pauseOnHover?: boolean;
+  resumeGraceMs?: number;
   onVocabularyCaptured?: (payload: VocabularyCaptureInput) => void;
 }
 
@@ -55,9 +57,14 @@ const OVERLAY_CSS = `
     color: #ffffff;
     padding: 5px 12px;
     border-radius: 6px;
+    border: 1px solid transparent;
     font-size: clamp(15px, 2.1vw, 24px);
     line-height: 1.42;
     user-select: none;
+    transition: border-color 120ms ease;
+  }
+  .lexistream-caption-bar[data-autopause="true"] {
+    border-color: rgba(56, 189, 248, 0.45);
   }
   .lexistream-status-pill {
     display: inline-block;
@@ -100,6 +107,8 @@ export class InteractiveSubtitleController {
   private sourceLanguage: LanguageCode;
   private targetLanguage: LanguageCode;
   private readonly hoverDebounceMs: number;
+  private pauseOnHover: boolean;
+  private readonly resumeGraceMs: number;
   private readonly onVocabularyCaptured?: (payload: VocabularyCaptureInput) => void;
 
   private readonly adapter: YouTubeCaptionAdapter;
@@ -112,6 +121,8 @@ export class InteractiveSubtitleController {
   private savedNormalizedSet = new Set<string>();
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private resumeTimer: ReturnType<typeof setTimeout> | null = null;
+  private autoPausedByHover = false;
   private activeAbortController: AbortController | null = null;
   private unsubscribeEvents: (() => void) | null = null;
 
@@ -131,6 +142,8 @@ export class InteractiveSubtitleController {
     this.sourceLanguage = options.sourceLanguage ?? 'en';
     this.targetLanguage = options.targetLanguage ?? 'pt';
     this.hoverDebounceMs = options.hoverDebounceMs ?? 120;
+    this.pauseOnHover = options.pauseOnHover ?? true;
+    this.resumeGraceMs = options.resumeGraceMs ?? 120;
     this.onVocabularyCaptured = options.onVocabularyCaptured;
 
     this.boundPointerOver = (ev) => this.handleDelegatedHover(ev);
@@ -146,6 +159,7 @@ export class InteractiveSubtitleController {
       } else if (ev.key === 'Escape') {
         this.cancelPendingHover();
         this.tooltip?.hide();
+        this.resumeIfAutoPaused();
       }
     };
     this.boundDocPointerDown = (ev) => {
@@ -153,12 +167,14 @@ export class InteractiveSubtitleController {
       if (!target?.closest?.('[data-lexistream-overlay="true"]')) {
         this.cancelPendingHover();
         this.tooltip?.hide();
+        this.resumeIfAutoPaused();
       }
     };
     this.boundDocKeyDown = (ev) => {
       if (ev.key === 'Escape') {
         this.cancelPendingHover();
         this.tooltip?.hide();
+        this.resumeIfAutoPaused();
       }
     };
 
@@ -193,8 +209,17 @@ export class InteractiveSubtitleController {
     });
   }
 
+  setPauseOnHover(enabled: boolean): void {
+    this.pauseOnHover = enabled;
+    if (!enabled) {
+      this.resumeIfAutoPaused();
+    }
+  }
+
   stop(): void {
     this.cancelPendingHover();
+    this.cancelPendingResume();
+    this.autoPausedByHover = false;
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = null;
     this.doc.removeEventListener('pointerdown', this.boundDocPointerDown);
@@ -368,9 +393,16 @@ export class InteractiveSubtitleController {
   }
 
   private handleDelegatedHover(ev: Event): void {
+    const target = ev.target as HTMLElement | null;
+    if (target?.closest?.('.lexistream-caption-bar')) {
+      // Keep video paused while moving across spaces/punctuation between words in the bar
+      this.cancelPendingResume();
+    }
+
     const resolved = this.resolveWordTarget(ev);
     if (!resolved) return;
 
+    this.pauseVideoOnWordEnter();
     this.cancelPendingHover();
     this.debounceTimer = setTimeout(() => {
       void this.lookupAndShowTooltip(resolved.span, resolved.token);
@@ -382,7 +414,75 @@ export class InteractiveSubtitleController {
     const related = mouseEv.relatedTarget as HTMLElement | null;
     if (related?.closest?.('.lexistream-caption-bar')) return;
     this.cancelPendingHover();
-    this.tooltip?.hide();
+    this.scheduleResumeAndHide();
+  }
+
+  private pauseVideoOnWordEnter(): void {
+    if (!this.pauseOnHover) return;
+    this.cancelPendingResume();
+
+    const videoEl = this.doc.querySelector<HTMLVideoElement>(YOUTUBE_SELECTORS.videoElement);
+    if (!videoEl) return;
+
+    if (!videoEl.paused && !videoEl.ended) {
+      try {
+        videoEl.pause();
+        this.autoPausedByHover = true;
+        const bar = this.overlayRoot?.querySelector<HTMLElement>('.lexistream-caption-bar');
+        if (bar) bar.dataset.autopause = 'true';
+
+        // If user manually resumes playback while pointer is still inside subtitle bar, respect it
+        videoEl.addEventListener(
+          'play',
+          () => {
+            this.autoPausedByHover = false;
+            const currentBar =
+              this.overlayRoot?.querySelector<HTMLElement>('.lexistream-caption-bar');
+            if (currentBar) delete currentBar.dataset.autopause;
+          },
+          { once: true },
+        );
+      } catch {
+        // Ignore restricted media pause errors
+      }
+    }
+  }
+
+  private scheduleResumeAndHide(): void {
+    this.cancelPendingResume();
+    this.resumeTimer = setTimeout(() => {
+      this.resumeTimer = null;
+      this.tooltip?.hide();
+      this.resumeIfAutoPaused();
+    }, this.resumeGraceMs);
+  }
+
+  private cancelPendingResume(): void {
+    if (this.resumeTimer !== null) {
+      clearTimeout(this.resumeTimer);
+      this.resumeTimer = null;
+    }
+  }
+
+  private resumeIfAutoPaused(): void {
+    this.cancelPendingResume();
+    const bar = this.overlayRoot?.querySelector<HTMLElement>('.lexistream-caption-bar');
+    if (bar) delete bar.dataset.autopause;
+
+    if (!this.autoPausedByHover) return;
+    this.autoPausedByHover = false;
+
+    const videoEl = this.doc.querySelector<HTMLVideoElement>(YOUTUBE_SELECTORS.videoElement);
+    if (videoEl && videoEl.paused && !videoEl.ended) {
+      try {
+        const playPromise = videoEl.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(() => {});
+        }
+      } catch {
+        // Ignore autoplay policy restrictions
+      }
+    }
   }
 
   private cancelPendingHover(): void {

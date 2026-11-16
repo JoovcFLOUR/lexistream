@@ -38,6 +38,14 @@ export function PopupApp() {
     setSettings(updated);
   };
 
+  const togglePauseOnHover = async () => {
+    if (!settings) return;
+    const updated = await repo.saveSettings({
+      pause_on_hover: !settings.pause_on_hover,
+    });
+    setSettings(updated);
+  };
+
   const openExtensionPage = (hash = '') => {
     const base = browser.runtime.getURL('/dashboard.html');
     window.open(`${base}${hash}`, '_blank', 'noopener');
@@ -47,14 +55,24 @@ export function PopupApp() {
     <main class="popup-shell">
       <header class="brand-row">
         <span class="brand-title">LexiStream</span>
-        <label style={{ fontSize: '12px', display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            checked={settings?.enable_interactive_captions ?? true}
-            onChange={() => void toggleInteractive()}
-          />
-          Active on YT
-        </label>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <label style={{ fontSize: '11.5px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={settings?.pause_on_hover ?? true}
+              onChange={() => void togglePauseOnHover()}
+            />
+            Auto-pause
+          </label>
+          <label style={{ fontSize: '11.5px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={settings?.enable_interactive_captions ?? true}
+              onChange={() => void toggleInteractive()}
+            />
+            Active
+          </label>
+        </div>
       </header>
 
       <section class="stats-strip" aria-label="Vocabulary summary">

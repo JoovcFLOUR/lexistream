@@ -62,6 +62,22 @@ export default defineBackground(() => {
         })
         .catch(() => {});
     }
+    if (ev.type === 'settings_changed') {
+      void repo.getSettings().then((settings) => {
+        void browser.tabs
+          ?.query({ url: '*://*.youtube.com/*' })
+          .then((tabs) => {
+            for (const t of tabs) {
+              if (t.id !== undefined) {
+                void browser.tabs
+                  .sendMessage(t.id, { type: 'LEXISTREAM_SETTINGS_CHANGED', settings })
+                  .catch(() => {});
+              }
+            }
+          })
+          .catch(() => {});
+      });
+    }
   });
 
   browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {

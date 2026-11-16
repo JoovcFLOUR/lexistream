@@ -75,27 +75,31 @@ export default defineContentScript({
       memoryCacheSize: 512,
     });
 
-    const onBgMessage = (msg: unknown) => {
-      const m = msg as { type?: string } | null;
-      if (m?.type === 'LEXISTREAM_DICTIONARY_CHANGED') {
-        void translationService.clearCaches();
-        emitLexiStreamEvent({ type: 'dictionary_changed' });
-      }
-    };
-    browser.runtime.onMessage.addListener(onBgMessage);
-
     const controller = new InteractiveSubtitleController({
       translationService,
       vocabularyRepo,
       sourceLanguage: settings.source_language,
       targetLanguage: settings.target_language,
       hoverDebounceMs: settings.hover_debounce_ms,
+      pauseOnHover: settings.pause_on_hover,
       onVocabularyCaptured: (payload) => {
         void browser.runtime
           .sendMessage({ type: 'LEXISTREAM_CAPTURE', payload })
           .catch(() => {});
       },
     });
+
+    const onBgMessage = (msg: unknown) => {
+      const m = msg as { type?: string; settings?: UserSettings } | null;
+      if (m?.type === 'LEXISTREAM_DICTIONARY_CHANGED') {
+        void translationService.clearCaches();
+        emitLexiStreamEvent({ type: 'dictionary_changed' });
+      }
+      if (m?.type === 'LEXISTREAM_SETTINGS_CHANGED' && m.settings) {
+        controller.setPauseOnHover(m.settings.pause_on_hover);
+      }
+    };
+    browser.runtime.onMessage.addListener(onBgMessage);
 
     controller.start();
     ctx.onInvalidated(() => {

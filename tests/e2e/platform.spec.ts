@@ -181,4 +181,29 @@ test.describe('LexiStream End-to-End Browser & Backend Sync Suite', () => {
     await page.getByTestId('remove-dict-en-pt').click();
     await expect(page.getByTestId('installed-dicts-count')).toHaveText('0');
   });
+
+  test('auto-pauses playing YouTube video on subtitle word hover so subtitles never disappear mid-study, and resumes on pointer leave', async ({
+    page,
+  }) => {
+    await page.goto('/youtube-fixture.html');
+
+    // Start video playback -> status switches to PLAYING
+    await page.locator('#play-pause-btn').click();
+    const status = page.locator('#playback-status');
+    await expect(status).toContainText('PLAYING');
+
+    // Hover over a subtitle word -> video auto-pauses immediately
+    const overlay = page.locator('[data-lexistream-overlay="true"]');
+    const word = overlay.locator('.lx-word', { hasText: 'thought' }).first();
+    await word.hover();
+    await expect(status).toContainText('PAUSED');
+    await expect(overlay.locator('.lexistream-caption-bar')).toHaveAttribute(
+      'data-autopause',
+      'true',
+    );
+
+    // Move mouse outside the subtitle bar -> video automatically resumes playing
+    await page.mouse.move(20, 20);
+    await expect(status).toContainText('PLAYING');
+  });
 });

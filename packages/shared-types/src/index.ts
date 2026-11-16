@@ -187,6 +187,7 @@ export const UserSettingsSchema = z.object({
   daily_new_limit: z.number().int().min(1).max(200).default(20),
   daily_review_limit: z.number().int().min(1).max(1000).default(100),
   enable_interactive_captions: z.boolean().default(true),
+  pause_on_hover: z.boolean().default(true),
   hover_debounce_ms: z.number().int().min(0).max(1000).default(120),
   api_base_url: z.string().url().default('http://127.0.0.1:8787'),
   auth_token: z.string().nullable().default(null),

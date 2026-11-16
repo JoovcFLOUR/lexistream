@@ -277,13 +277,13 @@ export function DictionariesPage({
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <select
               aria-label="Installed dictionary pair"
-              style={{ width: 'auto', minWidth: '220px', maxWidth: '100%' }}
+              style={{ width: 'auto', minWidth: '280px', maxWidth: '100%' }}
               value={testPairId || installedPacks[0]?.pairId || ''}
               onChange={(e) => setTestPairId((e.target as HTMLSelectElement).value)}
             >
               {installedPacks.map((p) => (
                 <option key={p.pairId} value={p.pairId}>
-                  {p.pairId.toUpperCase()} ({p.entryCount.toLocaleString()} headwords)
+                  {p.pairId.toUpperCase()} — {p.title.split(' (')[0]} ({p.entryCount.toLocaleString()})
                 </option>
               ))}
             </select>

@@ -193,4 +193,87 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
 
     controller.stop();
   });
+
+  it('auto-pauses playing YouTube video on word hover like Language Reactor, stays paused across words in the bar, resumes on leave, and respects manual pause', async () => {
+    const { video } = createMockYouTubeDom({
+      videoId: 'vid_autopause',
+      title: 'Auto Pause Lecture',
+      currentTime: 33.5,
+      captionsEnabled: true,
+      initialSubtitle: 'I never thought this would happen.',
+    });
+
+    let isPaused = false;
+    Object.defineProperty(video, 'paused', {
+      get: () => isPaused,
+      configurable: true,
+    });
+    const pauseSpy = vi.spyOn(video, 'pause').mockImplementation(() => {
+      isPaused = true;
+    });
+    const playSpy = vi.spyOn(video, 'play').mockImplementation(async () => {
+      isPaused = false;
+    });
+
+    const repo = new VocabularyRepository('test-ext-autopause-db');
+    const translationService = new TranslationService({
+      providers: [new ContextualLexicalProvider()],
+    });
+
+    const controller = new InteractiveSubtitleController({
+      rootDocument: document,
+      locationHref: () => 'https://www.youtube.com/watch?v=vid_autopause',
+      translationService,
+      vocabularyRepo: repo,
+      hoverDebounceMs: 10,
+      resumeGraceMs: 15,
+    });
+
+    controller.start();
+    await new Promise((r) => setTimeout(r, 25));
+
+    const overlay = document.querySelector('[data-lexistream-overlay="true"]')!;
+    const bar = overlay.querySelector<HTMLElement>('.lexistream-caption-bar')!;
+    const words = Array.from(overlay.querySelectorAll<HTMLElement>('.lx-word'));
+    const neverSpan = words.find((w) => w.textContent === 'never')!;
+    const thoughtSpan = words.find((w) => w.textContent === 'thought')!;
+
+    // 1. Video is playing -> hovering "never" immediately pauses the video
+    neverSpan.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    expect(pauseSpy).toHaveBeenCalledTimes(1);
+    expect(isPaused).toBe(true);
+
+    // 2. Moving from "never" across the bar space onto "thought" does NOT prematurely resume playback
+    neverSpan.dispatchEvent(
+      new MouseEvent('mouseout', { bubbles: true, relatedTarget: bar }),
+    );
+    thoughtSpan.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(playSpy).not.toHaveBeenCalled();
+    expect(isPaused).toBe(true);
+
+    // 3. Leaving the subtitle bar completely resumes video playback
+    thoughtSpan.dispatchEvent(
+      new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }),
+    );
+    await new Promise((r) => setTimeout(r, 35));
+    expect(playSpy).toHaveBeenCalledTimes(1);
+    expect(isPaused).toBe(false);
+
+    // 4. If user manually paused the video BEFORE hovering, leaving the word must NOT auto-play!
+    isPaused = true;
+    pauseSpy.mockClear();
+    playSpy.mockClear();
+
+    neverSpan.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    expect(pauseSpy).not.toHaveBeenCalled();
+    neverSpan.dispatchEvent(
+      new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }),
+    );
+    await new Promise((r) => setTimeout(r, 35));
+    expect(playSpy).not.toHaveBeenCalled();
+    expect(isPaused).toBe(true);
+
+    controller.stop();
+  });
 });

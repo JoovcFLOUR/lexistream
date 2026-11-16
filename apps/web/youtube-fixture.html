@@ -25,6 +25,32 @@
         overflow: hidden;
         border: 1px solid #334155;
       }
+      .playback-hud {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        z-index: 20;
+      }
+      .playback-badge {
+        font-size: 12px;
+        font-weight: 700;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid #475569;
+        color: #cbd5e1;
+      }
+      .playback-badge[data-playing="true"] {
+        border-color: #34d399;
+        color: #34d399;
+      }
+      .playback-badge[data-playing="false"] {
+        border-color: #fbbf24;
+        color: #fbbf24;
+      }
       .controls-bar {
         display: flex;
         gap: 8px;
@@ -52,6 +78,12 @@
       </h1>
       <div id="movie_player" class="html5-video-player">
         <video class="html5-main-video"></video>
+        <div class="playback-hud">
+          <button id="play-pause-btn" type="button">▶ Play Video</button>
+          <span id="playback-status" class="playback-badge" data-playing="false">
+            ⏸ PAUSED · 125.4s
+          </span>
+        </div>
         <button
           id="cc-toggle"
           class="ytp-subtitles-button"

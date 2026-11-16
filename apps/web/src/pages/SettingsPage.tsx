@@ -14,6 +14,7 @@ export function SettingsPage({ repo, settings, onUpdated }: SettingsPageProps) {
   const [apiBaseUrl, setApiBaseUrl] = useState(settings.api_base_url);
   const [dailyNew, setDailyNew] = useState(settings.daily_new_limit);
   const [dailyReview, setDailyReview] = useState(settings.daily_review_limit);
+  const [pauseOnHover, setPauseOnHover] = useState(settings.pause_on_hover);
 
   const [email, setEmail] = useState(settings.user_email ?? '');
   const [password, setPassword] = useState('');
@@ -26,6 +27,7 @@ export function SettingsPage({ repo, settings, onUpdated }: SettingsPageProps) {
       api_base_url: apiBaseUrl,
       daily_new_limit: Number(dailyNew),
       daily_review_limit: Number(dailyReview),
+      pause_on_hover: pauseOnHover,
     });
     setStatusMessage('Local preferences saved.');
     await onUpdated();
@@ -137,6 +139,25 @@ export function SettingsPage({ repo, settings, onUpdated }: SettingsPageProps) {
             />
           </label>
         </div>
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginTop: '14px',
+            fontSize: '14px',
+            cursor: 'pointer',
+          }}
+        >
+          <input
+            type="checkbox"
+            style={{ width: 'auto' }}
+            data-testid="pause-on-hover-checkbox"
+            checked={pauseOnHover}
+            onChange={(e) => setPauseOnHover((e.target as HTMLInputElement).checked)}
+          />
+          Auto-pause YouTube video when hovering over a subtitle word (Language Reactor mode)
+        </label>
         <button
           type="button"
           class="btn btn-primary"
