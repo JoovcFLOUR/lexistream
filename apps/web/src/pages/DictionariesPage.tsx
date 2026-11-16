@@ -116,7 +116,7 @@ export function DictionariesPage({
           <div class="kpi-label">Installed Dictionaries</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-value">{totalEntries.toLocaleString()}</div>
+          <div class="kpi-value">{totalEntries.toLocaleString('en-US')}</div>
           <div class="kpi-label">Offline Headwords (Wiktionary)</div>
         </div>
         <div class="kpi-card">
@@ -203,7 +203,7 @@ export function DictionariesPage({
                           color: 'var(--success)',
                         }}
                       >
-                        ✓ Installed ({installed.entryCount.toLocaleString()} headwords)
+                        ✓ Installed ({installed.entryCount.toLocaleString('en-US')} headwords)
                       </span>
                     )}
                   </div>
@@ -246,7 +246,7 @@ export function DictionariesPage({
                   }}
                 >
                   <span>
-                    ~{item.estimatedEntries.toLocaleString()} headwords · ~{item.estimatedSizeMb}{' '}
+                    ~{item.estimatedEntries.toLocaleString('en-US')} headwords · ~{item.estimatedSizeMb}{' '}
                     MB download
                   </span>
                   <span>License: {item.license}</span>
@@ -283,7 +283,7 @@ export function DictionariesPage({
             >
               {installedPacks.map((p) => (
                 <option key={p.pairId} value={p.pairId}>
-                  {p.pairId.toUpperCase()} — {p.title.split(' (')[0]} ({p.entryCount.toLocaleString()} headwords)
+                  {p.pairId.toUpperCase()} — {p.title.split(' (')[0]} ({p.entryCount.toLocaleString('en-US')} headwords)
                 </option>
               ))}
             </select>

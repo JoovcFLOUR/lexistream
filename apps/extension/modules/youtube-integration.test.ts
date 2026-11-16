@@ -62,6 +62,14 @@ function createMockYouTubeDom(options?: {
   return { player, video, subBtn, captionContainer };
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, 15));
+  }
+}
+
 describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
   it('detects active video, observes subtitle mutations, handles disappearance, and reports unavailable captions gracefully', async () => {
     const { captionContainer, subBtn, video } = createMockYouTubeDom({
@@ -135,7 +143,7 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
     });
 
     controller.start();
-    await new Promise((r) => setTimeout(r, 20));
+    await waitFor(() => Boolean(document.querySelector('[data-lexistream-overlay="true"]')));
 
     const overlay = document.querySelector('[data-lexistream-overlay="true"]')!;
     expect(overlay).toBeTruthy();
@@ -230,7 +238,7 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
     });
 
     controller.start();
-    await new Promise((r) => setTimeout(r, 25));
+    await waitFor(() => Boolean(document.querySelector('[data-lexistream-overlay="true"]')));
 
     const overlay = document.querySelector('[data-lexistream-overlay="true"]')!;
     const bar = overlay.querySelector<HTMLElement>('.lexistream-caption-bar')!;
@@ -256,7 +264,7 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
     thoughtSpan.dispatchEvent(
       new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }),
     );
-    await new Promise((r) => setTimeout(r, 35));
+    await waitFor(() => playSpy.mock.calls.length === 1);
     expect(playSpy).toHaveBeenCalledTimes(1);
     expect(isPaused).toBe(false);
 
@@ -292,6 +300,17 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
     expect(isPaused).toBe(true);
 
     // User clicks playToggleBtn (fires pointerdown then click) -> must end PLAYING (isPaused === false)!
+    playToggleBtn.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    playToggleBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(isPaused).toBe(false);
+
+    // 6. Realistic human mouse journey (200ms > resumeGraceMs): hover -> mouseout -> 200ms -> click Play/Pause toggle
+    thoughtSpan.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    expect(isPaused).toBe(true);
+    thoughtSpan.dispatchEvent(
+      new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }),
+    );
+    await new Promise((r) => setTimeout(r, 200));
     playToggleBtn.dispatchEvent(new Event('pointerdown', { bubbles: true }));
     playToggleBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(isPaused).toBe(false);

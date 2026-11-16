@@ -123,6 +123,7 @@ export class InteractiveSubtitleController {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private resumeTimer: ReturnType<typeof setTimeout> | null = null;
   private autoPausedByHover = false;
+  private lastAutoResumeAt = 0;
   private activeAbortController: AbortController | null = null;
   private unsubscribeEvents: (() => void) | null = null;
 
@@ -132,6 +133,7 @@ export class InteractiveSubtitleController {
   private readonly boundFocusIn: (ev: Event) => void;
   private readonly boundKeyDown: (ev: KeyboardEvent) => void;
   private readonly boundDocPointerDown: (ev: Event) => void;
+  private readonly boundDocCaptureClick: (ev: MouseEvent) => void;
   private readonly boundDocKeyDown: (ev: KeyboardEvent) => void;
 
   constructor(options: InteractiveSubtitleControllerOptions) {
@@ -184,6 +186,23 @@ export class InteractiveSubtitleController {
         }
       }
     };
+    this.boundDocCaptureClick = (ev) => {
+      if (this.lastAutoResumeAt === 0) return;
+      const elapsed = Date.now() - this.lastAutoResumeAt;
+      this.lastAutoResumeAt = 0;
+      if (elapsed > 650) return;
+
+      const target = ev.target as HTMLElement | null;
+      const isPlayToggle = Boolean(
+        target?.closest?.('.ytp-play-button, #play-pause-btn, video.html5-main-video'),
+      );
+      const videoEl = this.doc.querySelector<HTMLVideoElement>(YOUTUBE_SELECTORS.videoElement);
+      if (isPlayToggle && videoEl && !videoEl.paused) {
+        // Absorb the single redundant "Play" click because mouseout grace already resumed playback
+        ev.stopPropagation();
+        ev.preventDefault();
+      }
+    };
     this.boundDocKeyDown = (ev) => {
       if (ev.key === 'Escape') {
         this.cancelPendingHover();
@@ -205,6 +224,7 @@ export class InteractiveSubtitleController {
     this.injectPlayerStyleOnce();
     this.tooltip = new ShadowTooltipView(this.doc);
     this.doc.addEventListener('pointerdown', this.boundDocPointerDown);
+    this.doc.addEventListener('click', this.boundDocCaptureClick, true);
     this.doc.addEventListener('keydown', this.boundDocKeyDown);
 
     this.unsubscribeEvents = subscribeLexiStreamEvents((ev) => {
@@ -234,9 +254,11 @@ export class InteractiveSubtitleController {
     this.cancelPendingHover();
     this.cancelPendingResume();
     this.autoPausedByHover = false;
+    this.lastAutoResumeAt = 0;
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = null;
     this.doc.removeEventListener('pointerdown', this.boundDocPointerDown);
+    this.doc.removeEventListener('click', this.boundDocCaptureClick, true);
     this.doc.removeEventListener('keydown', this.boundDocKeyDown);
     this.adapter.stop();
 
@@ -489,6 +511,7 @@ export class InteractiveSubtitleController {
     const videoEl = this.doc.querySelector<HTMLVideoElement>(YOUTUBE_SELECTORS.videoElement);
     if (videoEl && videoEl.paused && !videoEl.ended) {
       try {
+        this.lastAutoResumeAt = Date.now();
         const playPromise = videoEl.play();
         if (playPromise && typeof playPromise.catch === 'function') {
           playPromise.catch(() => {});
