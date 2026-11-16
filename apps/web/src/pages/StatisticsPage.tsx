@@ -47,36 +47,36 @@ export function StatisticsPage({ stats }: StatisticsPageProps) {
       <section class="panel">
         <h2>14-Day Activity (Reviews &amp; New Captures)</h2>
         <svg
-          viewBox="0 0 560 150"
+          viewBox="0 0 700 170"
           width="100%"
-          height="150"
+          height="170"
           role="img"
           aria-label="14-day review and capture bar chart"
         >
           {stats.dailyHistory.map((pt, idx) => {
-            const x = idx * 40 + 10;
-            const revH = Math.round((pt.reviewsCount / maxDaily) * 105);
-            const newH = Math.round((pt.newWordsCount / maxDaily) * 105);
+            const x = idx * 49 + 14;
+            const revH = Math.round((pt.reviewsCount / maxDaily) * 115);
+            const newH = Math.round((pt.newWordsCount / maxDaily) * 115);
             return (
               <g key={pt.date}>
                 <rect
                   x={x}
-                  y={120 - revH}
-                  width={12}
+                  y={130 - revH}
+                  width={13}
                   height={Math.max(2, revH)}
                   rx={3}
                   fill="#38bdf8"
                 />
                 <rect
-                  x={x + 14}
-                  y={120 - newH}
-                  width={12}
+                  x={x + 15}
+                  y={130 - newH}
+                  width={13}
                   height={Math.max(2, newH)}
                   rx={3}
                   fill="#34d399"
                 />
-                <text x={x + 13} y={140} fontSize="9" fill="#94a3b8" textAnchor="middle">
-                  {pt.date.slice(5)}
+                <text x={x + 14} y={152} fontSize="10" fill="#94a3b8" textAnchor="middle">
+                  {pt.date.slice(5).replace('-', '/')}
                 </text>
               </g>
             );
@@ -111,7 +111,9 @@ export function StatisticsPage({ stats }: StatisticsPageProps) {
           ) : (
             stats.mostReviewedWords.map((w) => (
               <div key={w.lemma} style={{ marginBottom: '6px', fontSize: '13.5px' }}>
-                <strong>{w.lemma}</strong> ({w.language}) — {w.reps} reviews, {w.lapses} lapses
+                <strong>{w.lemma}</strong> ({w.language}) — {w.reps}{' '}
+                {w.reps === 1 ? 'review' : 'reviews'}, {w.lapses}{' '}
+                {w.lapses === 1 ? 'lapse' : 'lapses'}
               </div>
             ))
           )}

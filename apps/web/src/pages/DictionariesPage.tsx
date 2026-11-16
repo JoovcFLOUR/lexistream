@@ -23,6 +23,7 @@ export function DictionariesPage({
   const [progressByPair, setProgressByPair] = useState<
     Record<string, DictionaryDownloadProgress | undefined>
   >({});
+  const [removingByPair, setRemovingByPair] = useState<Record<string, boolean>>({});
   const [errorBanner, setErrorBanner] = useState('');
 
   // Quick offline tester state
@@ -60,11 +61,20 @@ export function DictionariesPage({
 
   const handleRemove = async (pairId: string) => {
     setErrorBanner('');
-    await dictionaryStore.removePack(pairId);
-    if (testPairId === pairId) {
-      setTestResult(null);
+    setRemovingByPair((prev) => ({ ...prev, [pairId]: true }));
+    try {
+      await dictionaryStore.removePack(pairId);
+      if (testPairId === pairId) {
+        setTestResult(null);
+      }
+      await onChanged();
+    } finally {
+      setRemovingByPair((prev) => {
+        const next = { ...prev };
+        delete next[pairId];
+        return next;
+      });
     }
-    await onChanged();
   };
 
   const handleQuickLookup = async () => {
@@ -206,10 +216,10 @@ export function DictionariesPage({
                         type="button"
                         class="btn btn-danger"
                         data-testid={`remove-dict-${item.pairId}`}
-                        disabled={Boolean(activeProgress)}
+                        disabled={Boolean(activeProgress) || Boolean(removingByPair[item.pairId])}
                         onClick={() => void handleRemove(item.pairId)}
                       >
-                        Remover
+                        {removingByPair[item.pairId] ? 'Removing…' : 'Remove'}
                       </button>
                     ) : (
                       <button
@@ -221,7 +231,7 @@ export function DictionariesPage({
                       >
                         {activeProgress
                           ? `${activeProgress.percent}%…`
-                          : `⬇ Baixar (~${item.estimatedSizeMb} MB)`}
+                          : `⬇ Download (~${item.estimatedSizeMb} MB)`}
                       </button>
                     )}
                   </div>
@@ -268,7 +278,7 @@ export function DictionariesPage({
           <h2>Testar Consulta Offline Instantânea</h2>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <select
-              style={{ maxWidth: '220px' }}
+              style={{ maxWidth: '340px', minWidth: '260px' }}
               value={testPairId || installedPacks[0]?.pairId || ''}
               onChange={(e) => setTestPairId((e.target as HTMLSelectElement).value)}
             >

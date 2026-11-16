@@ -106,6 +106,7 @@ export const TranslationRequestSchema = z.object({
   context: z.string().trim().max(2000).default(''),
   source_language: LanguageCodeSchema,
   target_language: LanguageCodeSchema,
+  word_offset: z.number().int().min(0).optional(),
 });
 
 export type TranslationRequest = z.infer<typeof TranslationRequestSchema>;

@@ -17,12 +17,74 @@ import type {
   WiktionaryDictionaryStore,
 } from './wiktionary-store';
 
+interface CoreGrammarSense {
+  lemma: string;
+  pos: PartOfSpeech;
+  translations: Record<string, string>;
+  definition: string;
+}
+
 /**
- * Offline provider backed by user-downloaded Wiktionary CC BY-SA packs in IndexedDB.
- * Automatically resolves across installed packs for the user's target language even when
- * the subtitle language differs from the default `source_language` setting (e.g., watching
- * a French video with `fr-pt` installed while settings still say `en`).
+ * High-frequency French grammar overrides so conjugated auxiliaries/determiners
+ * (like "est" = "is" vs compass "east", "cette" = "this" vs noun "woman") never mislead learners.
  */
+const CORE_FRENCH_GRAMMAR: Record<string, CoreGrammarSense> = {
+  être: {
+    lemma: 'être',
+    pos: 'verb',
+    translations: { pt: 'ser, estar', en: 'to be', es: 'ser, estar', de: 'sein' },
+    definition: 'To be; auxiliary verb of state or identity.',
+  },
+  avoir: {
+    lemma: 'avoir',
+    pos: 'verb',
+    translations: { pt: 'ter, haver', en: 'to have', es: 'tener, haber', de: 'haben' },
+    definition: 'To have; auxiliary verb.',
+  },
+  aller: {
+    lemma: 'aller',
+    pos: 'verb',
+    translations: { pt: 'ir', en: 'to go', es: 'ir', de: 'gehen' },
+    definition: 'To go; near-future auxiliary.',
+  },
+  ce: {
+    lemma: 'ce',
+    pos: 'determiner',
+    translations: { pt: 'este, esta, esse, essa, isso', en: 'this, that', es: 'este, esta' },
+    definition: 'Demonstrative determiner or pronoun (ce, cet, cette, ces).',
+  },
+  vous: {
+    lemma: 'vous',
+    pos: 'pronoun',
+    translations: { pt: 'você, vocês', en: 'you', es: 'usted, ustedes' },
+    definition: 'Second-person plural or polite singular pronoun.',
+  },
+  nous: {
+    lemma: 'nous',
+    pos: 'pronoun',
+    translations: { pt: 'nós, nos', en: 'we, us', es: 'nosotros' },
+    definition: 'First-person plural pronoun.',
+  },
+  œuvre: {
+    lemma: 'œuvre',
+    pos: 'noun',
+    translations: { pt: 'obra, trabalho', en: 'work, oeuvre', es: 'obra' },
+    definition: 'Artistic, literary, or intellectual work; action.',
+  },
+  école: {
+    lemma: 'école',
+    pos: 'noun',
+    translations: { pt: 'escola', en: 'school', es: 'escuela' },
+    definition: 'Institution for educating children or students.',
+  },
+  rendre: {
+    lemma: 'rendre',
+    pos: 'verb',
+    translations: { pt: 'devolver, tornar, entregar', en: 'to return, make, render', es: 'devolver, volver' },
+    definition: 'To give back, return, or cause to become.',
+  },
+};
+
 export class OfflineWiktionaryProvider implements TranslationProvider {
   readonly id = 'wiktionary-offline';
 
@@ -45,12 +107,11 @@ export class OfflineWiktionaryProvider implements TranslationProvider {
     const requestedSrc = request.source_language.slice(0, 2).toLowerCase();
     const detectedSrc = detectSubtitleLanguage(request.context, requestedSrc);
 
-    // Build ordered candidate pairs to check:
-    // 1. Detected sentence language -> target (e.g. 'fr-pt' when watching French subtitles!)
-    // 2. Requested source language -> target (e.g. 'en-pt')
-    // 3. Any other installed pack whose targetLanguage === tgt
+    // Strict cross-language guard:
+    // Only check `detectedSrc-tgt` and (if sentence wasn't confidently detected as another language) `requestedSrc-tgt`.
+    // Never answer a confidently English sentence from a French pack!
     const candidatePairs: Array<{ pairId: string; srcLang: string }> = [];
-    const pushPair = (srcLang: string) => {
+    const pushIfInstalled = (srcLang: string) => {
       const pid = `${srcLang}-${tgt}`;
       if (
         installedPacks.some((p) => p.pairId === pid) &&
@@ -60,29 +121,103 @@ export class OfflineWiktionaryProvider implements TranslationProvider {
       }
     };
 
-    pushPair(detectedSrc);
-    pushPair(requestedSrc);
-    for (const p of installedPacks) {
-      if (p.targetLanguage === tgt) {
-        pushPair(p.sourceLanguage);
-      }
+    pushIfInstalled(detectedSrc);
+    if (detectedSrc === requestedSrc) {
+      pushIfInstalled(requestedSrc);
     }
 
     if (candidatePairs.length === 0) {
-      throw new Error(`Wiktionary offline pack ${requestedSrc}-${tgt} is not installed`);
+      throw new Error(`Wiktionary offline pack ${detectedSrc}-${tgt} is not installed`);
     }
 
     for (const { pairId, srcLang } of candidatePairs) {
-      const analysis = lemmatizeInContext(request.word, request.context, srcLang);
-      const morphCandidates = generateLemmaCandidates(request.word, srcLang);
+      const analysis = lemmatizeInContext(
+        request.word,
+        request.context,
+        srcLang,
+        request.word_offset,
+      );
+
+      // Check core French grammar disambiguation first when language is French
+      if (srcLang === 'fr') {
+        const grammarHit =
+          CORE_FRENCH_GRAMMAR[analysis.lemma] ??
+          CORE_FRENCH_GRAMMAR[analysis.normalized];
+        if (grammarHit && grammarHit.pos === analysis.partOfSpeech) {
+          const tr = grammarHit.translations[tgt] ?? grammarHit.translations.pt!;
+          return {
+            word: request.word,
+            lemma: grammarHit.lemma,
+            part_of_speech: grammarHit.pos,
+            contextual_translation: tr,
+            definition: grammarHit.definition,
+            context_sentence: request.context,
+            context_translation: '',
+            meanings: [
+              {
+                id: `wikt-core-fr-${grammarHit.lemma}`,
+                part_of_speech: grammarHit.pos,
+                translation: tr,
+                definition: grammarHit.definition,
+                examples: [],
+              },
+            ],
+            provider: `wiktionary-offline:${pairId}`,
+            cached: false,
+          };
+        }
+        if (CORE_FRENCH_GRAMMAR[analysis.normalized] && analysis.partOfSpeech === 'other') {
+          const g = CORE_FRENCH_GRAMMAR[analysis.normalized]!;
+          const tr = g.translations[tgt] ?? g.translations.pt!;
+          return {
+            word: request.word,
+            lemma: g.lemma,
+            part_of_speech: g.pos,
+            contextual_translation: tr,
+            definition: g.definition,
+            context_sentence: request.context,
+            context_translation: '',
+            meanings: [
+              {
+                id: `wikt-core-fr-${g.lemma}`,
+                part_of_speech: g.pos,
+                translation: tr,
+                definition: g.definition,
+                examples: [],
+              },
+            ],
+            provider: `wiktionary-offline:${pairId}`,
+            cached: false,
+          };
+        }
+      }
+
+      // If a phrasal verb was detected (e.g. "look up"), look up the phrase itself first;
+      // do not silently degrade "look up" to single-word noun "look"!
+      if (analysis.detectedPhrase) {
+        const phraseRec = await this.store.lookupEntry(
+          pairId,
+          analysis.detectedPhrase,
+          srcLang,
+        );
+        if (!phraseRec) {
+          throw new Error(
+            `Phrase "${analysis.detectedPhrase}" not in ${pairId}; deferring to phrase-capable provider`,
+          );
+        }
+      }
+
+      const morphCandidates = analysis.detectedPhrase
+        ? [analysis.detectedPhrase]
+        : generateLemmaCandidates(request.word, srcLang);
+
       const candidates = Array.from(
         new Set(
-          [
-            analysis.detectedPhrase,
-            analysis.normalized,
-            analysis.lemma,
-            ...morphCandidates,
-          ].filter((x): x is string => Boolean(x)),
+          analysis.detectedPhrase
+            ? [analysis.detectedPhrase]
+            : [analysis.normalized, analysis.lemma, ...morphCandidates].filter(
+                (x): x is string => Boolean(x),
+              ),
         ),
       );
 
@@ -129,7 +264,7 @@ export class OfflineWiktionaryProvider implements TranslationProvider {
       for (const s of flatSenses) {
         let score = 0;
         if (s.pos === analysis.partOfSpeech) score += 5;
-        if (s.lemma === analysis.lemma) score += 3;
+        if (s.lemma === analysis.lemma) score += 4;
         if (s.gloss && contextLower.includes(s.gloss.toLowerCase())) score += 4;
         if (score > bestScore) {
           bestScore = score;
@@ -194,9 +329,6 @@ export interface LiveWiktionaryApiOptions {
 const INFLECTION_OF_REGEX =
   /\b(?:past tense|past participle|present participle|plural|inflection|form|singular|feminine|masculine|third-person singular)\s+(?:and\s+past\s+participle\s+)?of\s+([a-zA-ZÀ-ÿ'-]+)/i;
 
-/**
- * Queries live Wiktionary CC BY-SA 4.0 entries on demand over HTTPS (zero API key required).
- */
 export class LiveWiktionaryApiProvider implements TranslationProvider {
   readonly id = 'wiktionary-live-cc-by-sa';
   private readonly apiBaseUrl: string;
@@ -243,8 +375,15 @@ export class LiveWiktionaryApiProvider implements TranslationProvider {
     const requestedSrc = request.source_language.slice(0, 2).toLowerCase();
     const src = detectSubtitleLanguage(request.context, requestedSrc);
     const tgt = request.target_language.slice(0, 2).toLowerCase();
-    const analysis = lemmatizeInContext(request.word, request.context, src);
-    const candidates = generateLemmaCandidates(request.word, src);
+    const analysis = lemmatizeInContext(
+      request.word,
+      request.context,
+      src,
+      request.word_offset,
+    );
+    const candidates = analysis.detectedPhrase
+      ? [analysis.detectedPhrase]
+      : generateLemmaCandidates(request.word, src);
     const surfaceNorm = candidates[0] ?? normalizeToken(request.word, src);
 
     const primaryDoc = await this.fetchEntry(src, surfaceNorm, signal);

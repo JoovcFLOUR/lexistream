@@ -131,5 +131,18 @@ describe('@lexistream/language-core', () => {
       'fr',
     );
     expect(aujourdhui.lemma).toBe("aujourd'hui");
+
+    // Present-tense & irregular French verbs reported by QA beta test
+    expect(lemmatizeInContext('parlons', 'Nous parlons français.', 'fr').lemma).toBe('parler');
+    expect(lemmatizeInContext('parlent', 'Ils parlent vite.', 'fr').lemma).toBe('parler');
+    expect(lemmatizeInContext('finissent', 'Elles finissent le travail.', 'fr').lemma).toBe('finir');
+    expect(lemmatizeInContext('vais', 'Je vais bien.', 'fr').lemma).toBe('aller');
+    expect(lemmatizeInContext('êtes', 'Vous êtes prêts.', 'fr').lemma).toBe('être');
+    expect(lemmatizeInContext('avons', 'Nous avons le temps.', 'fr').lemma).toBe('avoir');
+
+    // Second "up" in "Never give up when you look it up" must resolve to "look up", not "give up"
+    const cue = 'Never give up when you look it up in context.';
+    const secondUpOffset = cue.indexOf('up in context');
+    expect(lemmatizeInContext('up', cue, 'en', secondUpOffset).lemma).toBe('look up');
   });
 });

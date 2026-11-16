@@ -72,9 +72,11 @@ const OVERLAY_CSS = `
     padding: 0 1px;
     transition: background-color 90ms ease, color 90ms ease;
   }
-  .lx-word:hover {
+  .lx-word:hover,
+  .lx-word:focus-visible {
     background: rgba(56, 189, 248, 0.28);
     color: #e0f2fe;
+    outline: none;
   }
   .lx-word[data-phrase="true"] {
     border-bottom: 1px dashed rgba(125, 211, 252, 0.55);
@@ -115,6 +117,10 @@ export class InteractiveSubtitleController {
   private readonly boundPointerOver: (ev: Event) => void;
   private readonly boundPointerOut: (ev: Event) => void;
   private readonly boundClick: (ev: Event) => void;
+  private readonly boundFocusIn: (ev: Event) => void;
+  private readonly boundKeyDown: (ev: KeyboardEvent) => void;
+  private readonly boundDocPointerDown: (ev: Event) => void;
+  private readonly boundDocKeyDown: (ev: KeyboardEvent) => void;
 
   constructor(options: InteractiveSubtitleControllerOptions) {
     this.doc = options.rootDocument ?? document;
@@ -131,6 +137,29 @@ export class InteractiveSubtitleController {
     this.boundClick = (ev) => {
       void this.handleDelegatedClick(ev);
     };
+    this.boundFocusIn = (ev) => this.handleDelegatedHover(ev);
+    this.boundKeyDown = (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        void this.handleDelegatedClick(ev);
+      } else if (ev.key === 'Escape') {
+        this.cancelPendingHover();
+        this.tooltip?.hide();
+      }
+    };
+    this.boundDocPointerDown = (ev) => {
+      const target = ev.target as HTMLElement | null;
+      if (!target?.closest?.('[data-lexistream-overlay="true"]')) {
+        this.cancelPendingHover();
+        this.tooltip?.hide();
+      }
+    };
+    this.boundDocKeyDown = (ev) => {
+      if (ev.key === 'Escape') {
+        this.cancelPendingHover();
+        this.tooltip?.hide();
+      }
+    };
 
     this.adapter = new YouTubeCaptionAdapter({
       rootDocument: this.doc,
@@ -144,6 +173,9 @@ export class InteractiveSubtitleController {
   start(): void {
     this.injectPlayerStyleOnce();
     this.tooltip = new ShadowTooltipView(this.doc);
+    this.doc.addEventListener('pointerdown', this.boundDocPointerDown);
+    this.doc.addEventListener('keydown', this.boundDocKeyDown);
+
     this.unsubscribeEvents = subscribeLexiStreamEvents((ev) => {
       if (ev.type === 'dictionary_changed') {
         this.latestResultByTokenIdx.clear();
@@ -164,16 +196,24 @@ export class InteractiveSubtitleController {
     this.cancelPendingHover();
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = null;
+    this.doc.removeEventListener('pointerdown', this.boundDocPointerDown);
+    this.doc.removeEventListener('keydown', this.boundDocKeyDown);
     this.adapter.stop();
+
     if (this.overlayRoot) {
       this.overlayRoot.removeEventListener('mouseover', this.boundPointerOver);
       this.overlayRoot.removeEventListener('mouseout', this.boundPointerOut);
       this.overlayRoot.removeEventListener('click', this.boundClick);
+      this.overlayRoot.removeEventListener('focusin', this.boundFocusIn);
+      this.overlayRoot.removeEventListener('keydown', this.boundKeyDown);
       this.overlayRoot.remove();
       this.overlayRoot = null;
     }
     const player = this.doc.querySelector(YOUTUBE_SELECTORS.playerContainer);
     player?.classList.remove('lexistream-active');
+    player
+      ?.querySelector(YOUTUBE_SELECTORS.captionWindowContainer)
+      ?.removeAttribute('aria-hidden');
     this.tooltip?.destroy();
     this.tooltip = null;
   }
@@ -200,10 +240,11 @@ export class InteractiveSubtitleController {
     root.setAttribute('data-lexistream-overlay', 'true');
     root.setAttribute('data-lexistream-internal', 'true');
 
-    // Single delegated listener set on the overlay container (O(1) event listeners)
     root.addEventListener('mouseover', this.boundPointerOver);
     root.addEventListener('mouseout', this.boundPointerOut);
     root.addEventListener('click', this.boundClick);
+    root.addEventListener('focusin', this.boundFocusIn);
+    root.addEventListener('keydown', this.boundKeyDown);
 
     player.appendChild(root);
     this.overlayRoot = root;
@@ -221,6 +262,13 @@ export class InteractiveSubtitleController {
     }
   }
 
+  private isTokenSaved(tok: SubtitleToken): boolean {
+    if (tok.detectedPhrase) {
+      return this.savedNormalizedSet.has(tok.detectedPhrase);
+    }
+    return this.savedNormalizedSet.has(tok.normalized);
+  }
+
   private syncSavedHighlightsInDom(): void {
     if (!this.overlayRoot) return;
     const spans = this.overlayRoot.querySelectorAll<HTMLElement>('.lx-word');
@@ -228,10 +276,7 @@ export class InteractiveSubtitleController {
       const idx = Number(sp.dataset.tokenIdx);
       const tok = this.activeTokens.find((t) => t.index === idx);
       if (!tok) return;
-      const isSaved =
-        this.savedNormalizedSet.has(tok.normalized) ||
-        (tok.detectedPhrase && this.savedNormalizedSet.has(tok.detectedPhrase));
-      if (isSaved) {
+      if (this.isTokenSaved(tok)) {
         sp.dataset.saved = 'true';
       } else {
         delete sp.dataset.saved;
@@ -243,16 +288,18 @@ export class InteractiveSubtitleController {
     this.activeCue = snapshot;
     this.latestResultByTokenIdx.clear();
     this.cancelPendingHover();
+    this.tooltip?.hide();
 
     const root = this.ensureOverlayMounted();
     const player = this.doc.querySelector(YOUTUBE_SELECTORS.playerContainer);
     if (!root || !player) return;
 
+    const nativeCap = player.querySelector(YOUTUBE_SELECTORS.captionWindowContainer);
     root.replaceChildren();
 
     if (!snapshot.captionsAvailable) {
       player.classList.remove('lexistream-active');
-      this.tooltip?.hide();
+      nativeCap?.removeAttribute('aria-hidden');
       const status = this.doc.createElement('div');
       status.className = 'lexistream-status-pill';
       status.textContent = 'LexiStream: Enable YouTube captions (CC) for interactive words';
@@ -262,11 +309,13 @@ export class InteractiveSubtitleController {
 
     if (!snapshot.text) {
       player.classList.remove('lexistream-active');
-      this.tooltip?.hide();
+      nativeCap?.removeAttribute('aria-hidden');
       return;
     }
 
     player.classList.add('lexistream-active');
+    nativeCap?.setAttribute('aria-hidden', 'true');
+
     const cueLang = detectSubtitleLanguage(snapshot.text, this.sourceLanguage);
     const rawTokens = tokenizeSubtitle(snapshot.text, cueLang);
     this.activeTokens = detectPhrasesInTokens(rawTokens, cueLang);
@@ -283,14 +332,13 @@ export class InteractiveSubtitleController {
 
       const span = this.doc.createElement('span');
       span.className = 'lx-word';
+      span.tabIndex = 0;
+      span.setAttribute('role', 'button');
       span.dataset.tokenIdx = String(tok.index);
       if (tok.detectedPhrase) {
         span.dataset.phrase = 'true';
       }
-      if (
-        this.savedNormalizedSet.has(tok.normalized) ||
-        (tok.detectedPhrase && this.savedNormalizedSet.has(tok.detectedPhrase))
-      ) {
+      if (this.isTokenSaved(tok)) {
         span.dataset.saved = 'true';
       }
       span.textContent = tok.text;
@@ -306,12 +354,7 @@ export class InteractiveSubtitleController {
     const bar = span.closest('.lexistream-caption-bar');
     if (!bar) return wordRect;
     const barRect = bar.getBoundingClientRect();
-    return new DOMRect(
-      wordRect.x,
-      barRect.y,
-      wordRect.width,
-      barRect.height,
-    );
+    return new DOMRect(wordRect.x, barRect.y, wordRect.width, barRect.height);
   }
 
   private resolveWordTarget(ev: Event): { span: HTMLElement; token: SubtitleToken } | null {
@@ -336,8 +379,9 @@ export class InteractiveSubtitleController {
   private handleDelegatedOut(ev: Event): void {
     const mouseEv = ev as MouseEvent;
     const related = mouseEv.relatedTarget as HTMLElement | null;
-    if (related?.closest?.('.lx-word')) return;
-    // Keep tooltip visible briefly unless user leaves word bar completely
+    if (related?.closest?.('.lexistream-caption-bar')) return;
+    this.cancelPendingHover();
+    this.tooltip?.hide();
   }
 
   private cancelPendingHover(): void {
@@ -351,6 +395,13 @@ export class InteractiveSubtitleController {
     }
   }
 
+  private computeRelativeWordOffset(fullCue: string, sentence: string, token: SubtitleToken): number | undefined {
+    const sentenceStart = fullCue.indexOf(sentence);
+    if (sentenceStart === -1) return undefined;
+    const rel = token.startOffset - sentenceStart;
+    return rel >= 0 ? rel : undefined;
+  }
+
   private async lookupAndShowTooltip(
     span: HTMLElement,
     token: SubtitleToken,
@@ -362,6 +413,7 @@ export class InteractiveSubtitleController {
 
     const sentence = extractSentenceForToken(this.activeCue.text, token) || this.activeCue.text;
     const effectiveLang = detectSubtitleLanguage(sentence, this.sourceLanguage);
+    const wordOffset = this.computeRelativeWordOffset(this.activeCue.text, sentence, token);
     const rect = this.computeTooltipAnchorRect(span);
 
     const savedMatches = await this.vocabularyRepo.findMatchingEntries(
@@ -371,7 +423,7 @@ export class InteractiveSubtitleController {
 
     this.tooltip.render({
       anchorRect: rect,
-      surfaceWord: token.text,
+      surfaceWord: token.detectedPhrase ?? token.text,
       loading: true,
       savedEntries: savedMatches,
     });
@@ -383,6 +435,7 @@ export class InteractiveSubtitleController {
           context: sentence,
           source_language: effectiveLang,
           target_language: this.targetLanguage,
+          word_offset: wordOffset,
         },
         controller.signal,
       );
@@ -397,7 +450,7 @@ export class InteractiveSubtitleController {
 
       this.tooltip.render({
         anchorRect: this.computeTooltipAnchorRect(span),
-        surfaceWord: token.text,
+        surfaceWord: token.detectedPhrase ?? token.text,
         result,
         savedEntries: postLookupSaved.length > 0 ? postLookupSaved : savedMatches,
       });
@@ -421,17 +474,20 @@ export class InteractiveSubtitleController {
       translation =
         (await this.lookupAndShowTooltip(span, token)) ?? {
           word: token.text,
-          lemma: token.normalized || token.text.toLowerCase(),
-          part_of_speech: 'other',
+          lemma: token.detectedPhrase ?? (token.normalized || token.text.toLowerCase()),
+          part_of_speech: token.detectedPhrase ? 'phrase' : 'other',
           contextual_translation: token.text,
           definition: '',
           context_sentence: sentence,
           context_translation: '',
           meanings: [],
-          provider: 'fallback',
+          provider: 'local-fallback-untranslated',
           cached: false,
         };
     }
+
+    const isUntranslatedFallback =
+      translation.provider === 'local-fallback-untranslated';
 
     const videoMeta = this.activeCue.video ?? {
       videoId: 'unknown',
@@ -446,13 +502,18 @@ export class InteractiveSubtitleController {
         ? videoEl.currentTime
         : videoMeta.currentTime;
 
+    const surfaceToSave = token.detectedPhrase ?? token.text;
+    const cleanTranslationToSave = isUntranslatedFallback
+      ? 'Pending translation (edit in Vocabulary)'
+      : translation.contextual_translation;
+
     const capturePayload: VocabularyCaptureInput = {
-      surface_form: token.text,
+      surface_form: surfaceToSave,
       lemma: translation.lemma,
       language: effectiveLang,
       target_language: this.targetLanguage,
-      translation: translation.contextual_translation,
-      definition: translation.definition,
+      translation: cleanTranslationToSave,
+      definition: isUntranslatedFallback ? '' : translation.definition,
       part_of_speech: translation.part_of_speech,
       context: sentence,
       context_translation: translation.context_translation,
@@ -460,14 +521,14 @@ export class InteractiveSubtitleController {
       video_title: videoMeta.videoTitle,
       video_url: videoMeta.videoUrl,
       timestamp: exactTimestamp,
-      additional_meanings: translation.meanings,
+      additional_meanings: isUntranslatedFallback ? [] : translation.meanings,
     };
 
     await this.vocabularyRepo.captureVocabulary(capturePayload);
     this.onVocabularyCaptured?.(capturePayload);
 
     this.savedNormalizedSet.add(translation.lemma.toLowerCase());
-    this.savedNormalizedSet.add(token.normalized);
+    this.savedNormalizedSet.add(surfaceToSave.toLowerCase());
     this.syncSavedHighlightsInDom();
 
     const updatedMatches = await this.vocabularyRepo.findMatchingEntries(
@@ -477,7 +538,7 @@ export class InteractiveSubtitleController {
 
     this.tooltip?.render({
       anchorRect: this.computeTooltipAnchorRect(span),
-      surfaceWord: token.text,
+      surfaceWord: token.detectedPhrase ?? token.text,
       result: translation,
       savedEntries: updatedMatches,
     });

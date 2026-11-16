@@ -6,7 +6,8 @@ import type {
 } from '@lexistream/shared-types';
 
 function occurrenceSignature(occ: ContextOccurrence): string {
-  return `${occ.video_id}::${Math.floor(occ.timestamp)}::${occ.context.trim().toLowerCase()}`;
+  const bucket15s = Math.floor(occ.timestamp / 15);
+  return `${occ.video_id}::${bucket15s}::${occ.context.trim().toLowerCase()}`;
 }
 
 export function mergeOccurrences(

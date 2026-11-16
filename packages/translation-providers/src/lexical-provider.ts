@@ -264,6 +264,7 @@ export class ContextualLexicalProvider implements TranslationProvider {
       request.word,
       request.context,
       request.source_language,
+      request.word_offset,
     );
     const targetLang = request.target_language.slice(0, 2).toLowerCase();
     const lookupKeys = [

@@ -9,8 +9,11 @@ const SHADOW_CSS = `
   }
   .card {
     pointer-events: none;
-    min-width: 240px;
-    max-width: 340px;
+    box-sizing: border-box;
+    min-width: 220px;
+    max-width: min(340px, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
     background: rgba(15, 23, 42, 0.96);
     color: #f8fafc;
     border: 1px solid rgba(148, 163, 184, 0.28);
@@ -42,6 +45,12 @@ const SHADOW_CSS = `
     color: #f1f5f9;
     margin-bottom: 4px;
   }
+  .translation-missing {
+    font-size: 13px;
+    font-weight: 500;
+    color: #fbbf24;
+    margin-bottom: 4px;
+  }
   .definition {
     font-size: 12px;
     color: #cbd5e1;
@@ -63,13 +72,8 @@ const SHADOW_CSS = `
     margin-top: 6px;
     font-size: 11.5px;
   }
-  .ctx-orig {
-    color: #e2e8f0;
-    font-style: italic;
-  }
   .ctx-trans {
-    color: #94a3b8;
-    margin-top: 2px;
+    color: #cbd5e1;
   }
   .status-badge {
     display: inline-block;
@@ -98,10 +102,6 @@ export interface TooltipRenderState {
   savedEntries?: VocabularyItem[];
 }
 
-/**
- * Isolated Shadow DOM tooltip view.
- * Uses pure DOM creation (`textContent`) with zero innerHTML interpolation of untrusted text.
- */
 export class ShadowTooltipView {
   private readonly host: HTMLElement;
   private readonly shadow: ShadowRoot;
@@ -139,7 +139,11 @@ export class ShadowTooltipView {
     if (state.result) {
       const metaEl = this.doc.createElement('span');
       metaEl.className = 'meta';
-      metaEl.textContent = `${state.result.lemma} · ${state.result.part_of_speech}`;
+      const sameAsSurface =
+        state.result.lemma.trim().toLowerCase() === state.surfaceWord.trim().toLowerCase();
+      metaEl.textContent = sameAsSurface
+        ? state.result.part_of_speech
+        : `${state.result.lemma} · ${state.result.part_of_speech}`;
       header.appendChild(metaEl);
     }
     this.container.appendChild(header);
@@ -150,49 +154,63 @@ export class ShadowTooltipView {
       loadingEl.textContent = 'Translating in context…';
       this.container.appendChild(loadingEl);
     } else if (state.result) {
-      const transEl = this.doc.createElement('div');
-      transEl.className = 'translation';
-      transEl.textContent = state.result.contextual_translation;
-      this.container.appendChild(transEl);
+      const isUntranslatedFallback =
+        state.result.provider === 'local-fallback-untranslated';
 
-      if (state.result.definition) {
-        const defEl = this.doc.createElement('div');
-        defEl.className = 'definition';
-        defEl.textContent = state.result.definition;
-        this.container.appendChild(defEl);
-      }
+      if (isUntranslatedFallback) {
+        const missingEl = this.doc.createElement('div');
+        missingEl.className = 'translation-missing';
+        missingEl.textContent = 'No entry found (install language pack in Dictionaries)';
+        this.container.appendChild(missingEl);
+      } else {
+        const transEl = this.doc.createElement('div');
+        transEl.className = 'translation';
+        transEl.textContent = state.result.contextual_translation;
+        this.container.appendChild(transEl);
 
-      if (state.result.meanings.length > 1) {
-        const meaningsBox = this.doc.createElement('div');
-        meaningsBox.className = 'meanings';
-        for (const m of state.result.meanings.slice(0, 3)) {
-          const item = this.doc.createElement('div');
-          item.className = 'meaning-item';
-          item.textContent = `[${m.part_of_speech}] ${m.translation} — ${m.definition}`;
-          meaningsBox.appendChild(item);
+        if (
+          state.result.definition &&
+          state.result.definition.trim().toLowerCase() !==
+            state.result.contextual_translation.trim().toLowerCase()
+        ) {
+          const defEl = this.doc.createElement('div');
+          defEl.className = 'definition';
+          defEl.textContent = state.result.definition;
+          this.container.appendChild(defEl);
         }
-        this.container.appendChild(meaningsBox);
-      }
 
-      if (state.result.context_sentence) {
-        const ctxBox = this.doc.createElement('div');
-        ctxBox.className = 'context-box';
-        const orig = this.doc.createElement('div');
-        orig.className = 'ctx-orig';
-        orig.textContent = state.result.context_sentence;
-        ctxBox.appendChild(orig);
+        const distinctMeanings = state.result.meanings.filter(
+          (m) =>
+            m.translation.trim().toLowerCase() !==
+              state.result!.contextual_translation.trim().toLowerCase() ||
+            m.part_of_speech !== state.result!.part_of_speech,
+        );
+
+        if (distinctMeanings.length > 0) {
+          const meaningsBox = this.doc.createElement('div');
+          meaningsBox.className = 'meanings';
+          for (const m of distinctMeanings.slice(0, 3)) {
+            const item = this.doc.createElement('div');
+            item.className = 'meaning-item';
+            item.textContent = `[${m.part_of_speech}] ${m.translation} — ${m.definition}`;
+            meaningsBox.appendChild(item);
+          }
+          this.container.appendChild(meaningsBox);
+        }
 
         if (
           state.result.context_translation &&
           state.result.context_translation.trim().toLowerCase() !==
             state.result.context_sentence.trim().toLowerCase()
         ) {
+          const ctxBox = this.doc.createElement('div');
+          ctxBox.className = 'context-box';
           const tr = this.doc.createElement('div');
           tr.className = 'ctx-trans';
           tr.textContent = state.result.context_translation;
           ctxBox.appendChild(tr);
+          this.container.appendChild(ctxBox);
         }
-        this.container.appendChild(ctxBox);
       }
     }
 
@@ -208,16 +226,34 @@ export class ShadowTooltipView {
     }
     this.container.appendChild(badge);
 
-    // Position cleanly above the word when room exists above, or below the word near top of viewport
-    const left = Math.max(12, Math.min(window.innerWidth - 352, state.anchorRect.left));
-    const placeAbove = state.anchorRect.top > 180;
-    const top = placeAbove
-      ? Math.max(12, state.anchorRect.top - 8)
-      : state.anchorRect.bottom + 8;
-    this.host.style.left = `${left}px`;
-    this.host.style.top = `${top}px`;
-    this.host.style.transform = placeAbove ? 'translateY(-100%)' : 'none';
+    // Measure actual card dimensions and strictly clamp inside viewport bounds
+    this.host.style.visibility = 'hidden';
+    this.host.style.transform = 'none';
     this.host.style.display = 'block';
+
+    const vw = Math.max(320, window.innerWidth || 800);
+    const vh = Math.max(240, window.innerHeight || 600);
+    const cardRect = this.container.getBoundingClientRect();
+    const cardW = cardRect.width || 280;
+    const cardH = cardRect.height || 140;
+
+    const left = Math.max(12, Math.min(vw - cardW - 12, state.anchorRect.left));
+
+    let top: number;
+    const aboveCandidate = state.anchorRect.top - cardH - 8;
+    const belowCandidate = state.anchorRect.bottom + 8;
+
+    if (aboveCandidate >= 8) {
+      top = aboveCandidate;
+    } else if (belowCandidate + cardH <= vh - 8) {
+      top = belowCandidate;
+    } else {
+      top = Math.max(8, Math.min(vh - cardH - 8, aboveCandidate));
+    }
+
+    this.host.style.left = `${Math.round(left)}px`;
+    this.host.style.top = `${Math.round(top)}px`;
+    this.host.style.visibility = 'visible';
   }
 
   hide(): void {

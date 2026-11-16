@@ -1,5 +1,6 @@
 import type { LanguageCode } from '@lexistream/shared-types';
 import { normalizeToken } from '@lexistream/language-core';
+import { IndexedDbTranslationCache } from './cache';
 import {
   parseWiktionaryDslTxt,
   synthesizeBridgeDictionary,
@@ -50,9 +51,9 @@ export const WIKTIONARY_DICTIONARY_CATALOG: readonly WiktionaryCatalogEntry[] = 
     pairId: 'en-pt',
     sourceLanguage: 'en',
     targetLanguage: 'pt',
-    title: 'Inglês → Português (English → Portuguese)',
+    title: 'English → Portuguese (Inglês → Português)',
     estimatedSizeMb: 2.8,
-    estimatedEntries: 44700,
+    estimatedEntries: 28500,
     license: 'CC BY-SA 3.0 / 4.0 (Wiktionary)',
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
     attributionUrl: 'https://en.wiktionary.org/',
@@ -62,9 +63,9 @@ export const WIKTIONARY_DICTIONARY_CATALOG: readonly WiktionaryCatalogEntry[] = 
     pairId: 'pt-en',
     sourceLanguage: 'pt',
     targetLanguage: 'en',
-    title: 'Português → Inglês (Portuguese → English)',
+    title: 'Portuguese → English (Português → Inglês)',
     estimatedSizeMb: 2.6,
-    estimatedEntries: 41200,
+    estimatedEntries: 27800,
     license: 'CC BY-SA 3.0 / 4.0 (Wiktionary)',
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
     attributionUrl: 'https://en.wiktionary.org/',
@@ -74,9 +75,9 @@ export const WIKTIONARY_DICTIONARY_CATALOG: readonly WiktionaryCatalogEntry[] = 
     pairId: 'fr-pt',
     sourceLanguage: 'fr',
     targetLanguage: 'pt',
-    title: 'Francês → Português (French → Portuguese)',
-    estimatedSizeMb: 5.3,
-    estimatedEntries: 31500,
+    title: 'French → Portuguese (Francês → Português)',
+    estimatedSizeMb: 5.0,
+    estimatedEntries: 27400,
     license: 'CC BY-SA 3.0 / 4.0 (Wiktionary)',
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
     attributionUrl: 'https://en.wiktionary.org/',
@@ -89,9 +90,9 @@ export const WIKTIONARY_DICTIONARY_CATALOG: readonly WiktionaryCatalogEntry[] = 
     pairId: 'fr-en',
     sourceLanguage: 'fr',
     targetLanguage: 'en',
-    title: 'Francês → Inglês (French → English)',
+    title: 'French → English (Francês → Inglês)',
     estimatedSizeMb: 2.5,
-    estimatedEntries: 39400,
+    estimatedEntries: 34200,
     license: 'CC BY-SA 3.0 / 4.0 (Wiktionary)',
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
     attributionUrl: 'https://en.wiktionary.org/',
@@ -393,6 +394,7 @@ export class WiktionaryDictionaryStore {
       detail: `Installed ${allEntries.length} Wiktionary entries`,
     });
 
+    await new IndexedDbTranslationCache().clear();
     this.emitDictionaryChanged(pairId);
     return packMeta;
   }
@@ -402,14 +404,12 @@ export class WiktionaryDictionaryStore {
     const tx = db.transaction([PACKS_STORE, ENTRIES_STORE], 'readwrite');
     tx.objectStore(PACKS_STORE).delete(pairId);
 
+    // O(1) contiguous B-tree key-range delete instead of 27k individual delete calls!
     const entryStore = tx.objectStore(ENTRIES_STORE);
-    const index = entryStore.index('by_pair');
-    const keys = await idbReq(index.getAllKeys(IDBKeyRange.only(pairId)));
-    for (const key of keys) {
-      entryStore.delete(key);
-    }
+    entryStore.delete(IDBKeyRange.bound(`${pairId}::`, `${pairId}::\uffff`));
 
     await idbTx(tx);
+    await new IndexedDbTranslationCache().clear();
     this.emitDictionaryChanged(pairId);
   }
 

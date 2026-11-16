@@ -253,4 +253,78 @@ describe('Wiktionary On-Demand Offline Dictionaries & Live CC BY-SA Provider', (
     expect(appelee.lemma).toBe('appeler');
     expect(appelee.contextual_translation).toContain('chamar');
   });
+
+  it('prevents multi-word article pivot garbage ("français", "vous"), avoids English loanword leaks ("territoire"), and blocks French false-positives on English sentences', async () => {
+    const frEn = [
+      'français {m} :: The French language',
+      'français {adj} :: French',
+      'vous {pron} :: you (plural or polite singular pronoun used to address people)',
+      'territoire {m} :: country',
+      'territoire {m} :: territory',
+      'look {m} :: style, appearance',
+      'parler {v} :: to speak, talk',
+    ].join('\n');
+
+    const enPt = [
+      'the {adv} (comparative) :: No word accompanies the comparative in this usage.',
+      'French {adj} (of France) :: francês',
+      'French {n} (language) :: francês {m}',
+      'you {pron} (second person) :: você, vocês',
+      'country {n} (country music) :: country {m}',
+      'country {n} (nation state) :: país {m}, nação {f}',
+      'territory {n} (tract of land) :: território {m}',
+      'style {n} (fashion) :: estilo {m}',
+      'speak {v} (communicate) :: falar',
+    ].join('\n');
+
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('fr-en-enwiktionary.txt')) return new Response(frEn, { status: 200 });
+      if (url.includes('en-pt-enwiktionary.txt')) return new Response(enPt, { status: 200 });
+      return new Response('Not found', { status: 404 });
+    });
+
+    const store = new WiktionaryDictionaryStore(
+      'test-wikt-qa-fixes',
+      fetchMock as unknown as typeof fetch,
+    );
+    await store.downloadPack('fr-pt');
+    const offlineProvider = new OfflineWiktionaryProvider(store);
+
+    const francais = await offlineProvider.translate({
+      word: 'français',
+      context: 'Nous parlons français.',
+      source_language: 'fr',
+      target_language: 'pt',
+    });
+    expect(francais.contextual_translation).toContain('francês');
+    expect(francais.contextual_translation).not.toContain('No word accompanies');
+
+    const parlons = await offlineProvider.translate({
+      word: 'parlons',
+      context: 'Nous parlons français.',
+      source_language: 'fr',
+      target_language: 'pt',
+    });
+    expect(parlons.lemma).toBe('parler');
+    expect(parlons.contextual_translation).toContain('falar');
+
+    const territoire = await offlineProvider.translate({
+      word: 'territoire',
+      context: "Aujourd'hui, ce petit territoire souverain et indépendant",
+      source_language: 'fr',
+      target_language: 'pt',
+    });
+    expect(territoire.contextual_translation).toContain('território');
+    expect(territoire.contextual_translation).not.toMatch(/\bcountry\b/i);
+
+    // English sentence must NOT match French loanword "look {m} :: estilo" when only fr-pt is installed!
+    await expect(
+      offlineProvider.translate({
+        word: 'look',
+        context: 'Never give up when you look it up in context.',
+        source_language: 'en',
+        target_language: 'pt',
+      }),
+    ).rejects.toThrow();
+  });
 });

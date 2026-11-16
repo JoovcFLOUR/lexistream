@@ -11,6 +11,14 @@ import {
   PRONOUN_SUBJECTS,
 } from './english-lexicon';
 import {
+  FRENCH_CONJUNCTIONS,
+  FRENCH_DETERMINERS,
+  FRENCH_ETRE_AUX,
+  FRENCH_IRREGULAR_FORMS,
+  FRENCH_PREPOSITIONS,
+  FRENCH_SUBJECT_PRONOUNS,
+} from './french-lexicon';
+import {
   type SubtitleToken,
   extractSentenceForToken,
   normalizeToken,
@@ -40,6 +48,7 @@ export interface TextProcessor {
     word: string,
     contextSentence: string,
     language?: LanguageCode,
+    targetStartOffset?: number,
   ): LexicalAnalysis;
 }
 
@@ -58,6 +67,27 @@ const DOUBLE_CONSONANTS = new Set([
 const LANG_STOPWORDS: Record<string, ReadonlySet<string>> = {
   fr: new Set([
     "aujourd'hui",
+    'je',
+    'tu',
+    'il',
+    'elle',
+    'on',
+    'le',
+    'la',
+    'un',
+    'du',
+    'au',
+    'mon',
+    'ma',
+    'mes',
+    'ton',
+    'ta',
+    'tes',
+    'son',
+    'sa',
+    'ses',
+    'ne',
+    'se',
     'ce',
     'cet',
     'cette',
@@ -294,7 +324,19 @@ export function generateLemmaCandidates(
       push(norm);
     }
 
-    // Past participles -> -er / -ir infinitives (e.g. appelée -> appeler, parlés -> parler)
+    const irreg = FRENCH_IRREGULAR_FORMS[norm];
+    if (irreg) {
+      push(irreg.lemma);
+    }
+
+    // 2nd-group -ir verbs (finissent -> finir, choisissons -> choisir)
+    for (const suffix of ['issent', 'issons', 'issez', 'issait', 'issaient', 'issais']) {
+      if (norm.endsWith(suffix) && norm.length > suffix.length + 1) {
+        push(`${norm.slice(0, -suffix.length)}ir`);
+      }
+    }
+
+    // Past participles -> -er / -ir / -re infinitives (appelée -> appeler, choisie -> choisir)
     for (const suffix of ['ées', 'és', 'ée', 'é']) {
       if (norm.endsWith(suffix) && norm.length > suffix.length + 2) {
         push(`${norm.slice(0, -suffix.length)}er`);
@@ -305,8 +347,34 @@ export function generateLemmaCandidates(
         push(`${norm.slice(0, -suffix.length)}ir`);
       }
     }
-    if (norm.endsWith('ant') && norm.length > 5) {
-      push(`${norm.slice(0, -3)}er`);
+
+    // Present, imperfect, future & participial regular verb endings (parlons -> parler, rendez -> rendre, mange -> manger)
+    for (const suffix of [
+      'eront',
+      'erons',
+      'erez',
+      'erai',
+      'eras',
+      'era',
+      'aient',
+      'ions',
+      'iez',
+      'ais',
+      'ait',
+      'ant',
+      'ons',
+      'ez',
+      'ent',
+    ]) {
+      if (norm.endsWith(suffix) && norm.length > suffix.length + 2) {
+        const stem = norm.slice(0, -suffix.length);
+        if (stem.endsWith('e') && (suffix === 'ons' || suffix === 'ais' || suffix === 'ait' || suffix === 'aient')) {
+          push(`${stem}r`); // mangeons -> manger
+        }
+        push(`${stem}er`);
+        push(`${stem}re`);
+        push(`${stem}ir`);
+      }
     }
 
     // Adverbs & plural/feminine adjectives/nouns
@@ -334,11 +402,13 @@ export function generateLemmaCandidates(
     if (norm.endsWith('es') && norm.length > 4) {
       push(norm.slice(0, -1)); // numériques -> numérique
       push(norm.slice(0, -2)); // indépendantes -> indépendant, petites -> petit
+      push(`${norm.slice(0, -2)}er`); // parles -> parler
     }
     if ((norm.endsWith('s') || norm.endsWith('x')) && norm.length > 3) {
-      push(norm.slice(0, -1)); // souverains -> souverain
+      push(norm.slice(0, -1)); // souverains -> souverain, amis -> ami
     }
     if (norm.endsWith('e') && norm.length > 3) {
+      push(`${norm}r`); // mange -> manger, parle -> parler, défie -> défier
       push(norm.slice(0, -1)); // indépendante -> indépendant, petite -> petit
     }
     return out;
@@ -453,23 +523,75 @@ function stemRegularEnglish(word: string): { lemma: string; pos: PartOfSpeech } 
   return { lemma: word, pos: 'noun' };
 }
 
+function stemFrenchInContext(
+  word: string,
+  prevWord: string,
+): { lemma: string; pos: PartOfSpeech } {
+  const unelided = stripFrenchElision(word).toLowerCase();
+
+  // Contextual "partie": after être auxiliary ("Elle est partie") -> partir (verb)
+  if (unelided === 'partie' || unelided === 'parties') {
+    if (FRENCH_ETRE_AUX.has(prevWord)) {
+      return { lemma: 'partir', pos: 'verb' };
+    }
+    return { lemma: 'partie', pos: 'noun' };
+  }
+
+  // Contextual "est": unless preceded by determiner "l'" ("l'est" = the East), "est" in French sentences is "être" ("is")!
+  if (word === "l'est" || (unelided === 'est' && (prevWord === 'au' || prevWord === 'du'))) {
+    return { lemma: 'est', pos: 'noun' };
+  }
+
+  const irreg = FRENCH_IRREGULAR_FORMS[unelided];
+  if (irreg) return irreg;
+
+  if (FRENCH_DETERMINERS.has(unelided)) return { lemma: unelided, pos: 'determiner' };
+  if (FRENCH_SUBJECT_PRONOUNS.has(unelided)) return { lemma: unelided, pos: 'pronoun' };
+  if (FRENCH_PREPOSITIONS.has(unelided)) return { lemma: unelided, pos: 'preposition' };
+  if (FRENCH_CONJUNCTIONS.has(unelided)) return { lemma: unelided, pos: 'conjunction' };
+
+  for (const suffix of ['issent', 'issons', 'issez', 'issait', 'issaient']) {
+    if (unelided.endsWith(suffix) && unelided.length > suffix.length + 1) {
+      return { lemma: `${unelided.slice(0, -suffix.length)}ir`, pos: 'verb' };
+    }
+  }
+
+  for (const suffix of ['ées', 'és', 'ée', 'é']) {
+    if (unelided.endsWith(suffix) && unelided.length > suffix.length + 2) {
+      return { lemma: `${unelided.slice(0, -suffix.length)}er`, pos: 'verb' };
+    }
+  }
+
+  for (const suffix of ['eront', 'erons', 'erez', 'erai', 'eras', 'era', 'aient', 'ais', 'ait', 'ons', 'ez', 'ent']) {
+    if (unelided.endsWith(suffix) && unelided.length > suffix.length + 2 && !unelided.endsWith('ment')) {
+      const stem = unelided.slice(0, -suffix.length);
+      if (stem.endsWith('e') && (suffix === 'ons' || suffix === 'ais' || suffix === 'ait')) {
+        return { lemma: `${stem}r`, pos: 'verb' };
+      }
+      return { lemma: `${stem}er`, pos: 'verb' };
+    }
+  }
+
+  if (unelided.endsWith('e') && unelided.length > 3 && FRENCH_SUBJECT_PRONOUNS.has(prevWord)) {
+    return { lemma: `${unelided}r`, pos: 'verb' };
+  }
+
+  if (unelided.endsWith('ment') && unelided.length > 6) {
+    return { lemma: unelided, pos: 'adverb' };
+  }
+
+  return { lemma: unelided, pos: 'other' };
+}
+
 function stemRomanceOrOther(
   word: string,
   language: LanguageCode,
+  prevWord = '',
 ): { lemma: string; pos: PartOfSpeech } {
   const lang = language.slice(0, 2).toLowerCase();
 
   if (lang === 'fr') {
-    const unelided = stripFrenchElision(word).toLowerCase();
-    for (const suffix of ['ées', 'és', 'ée', 'é']) {
-      if (unelided.endsWith(suffix) && unelided.length > suffix.length + 2) {
-        return { lemma: `${unelided.slice(0, -suffix.length)}er`, pos: 'verb' };
-      }
-    }
-    if (unelided.endsWith('ment') && unelided.length > 6) {
-      return { lemma: unelided, pos: 'adverb' };
-    }
-    return { lemma: unelided, pos: 'other' };
+    return stemFrenchInContext(word, prevWord);
   }
 
   if (lang === 'pt' || lang === 'es') {
@@ -539,6 +661,7 @@ export function lemmatizeInContext(
   surfaceWord: string,
   contextSentence: string,
   language: LanguageCode = 'en',
+  targetStartOffset?: number,
 ): LexicalAnalysis {
   const normalized = normalizeToken(surfaceWord, language);
   if (!normalized) {
@@ -550,8 +673,19 @@ export function lemmatizeInContext(
     };
   }
 
+  const tokens = detectPhrasesInTokens(
+    tokenizeSubtitle(contextSentence, language),
+    language,
+  );
+  const words = tokens.filter((t) => t.isWord);
+  const targetIdx =
+    targetStartOffset !== undefined
+      ? words.findIndex((w) => w.startOffset === targetStartOffset)
+      : words.findIndex((w) => w.normalized === normalized);
+
   if (!language.startsWith('en')) {
-    const romance = stemRomanceOrOther(normalized, language);
+    const prevWord = targetIdx > 0 ? words[targetIdx - 1]!.normalized : '';
+    const romance = stemRomanceOrOther(normalized, language, prevWord);
     return {
       surfaceForm: surfaceWord,
       normalized,
@@ -559,13 +693,6 @@ export function lemmatizeInContext(
       partOfSpeech: romance.pos,
     };
   }
-
-  const tokens = detectPhrasesInTokens(
-    tokenizeSubtitle(contextSentence, language),
-    language,
-  );
-  const words = tokens.filter((t) => t.isWord);
-  const targetIdx = words.findIndex((w) => w.normalized === normalized);
 
   if (targetIdx !== -1 && words[targetIdx]!.detectedPhrase) {
     const phrase = words[targetIdx]!.detectedPhrase!;

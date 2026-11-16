@@ -169,6 +169,8 @@ textarea:focus {
   color: var(--text-primary);
   font-size: 13.5px;
   font-weight: 600;
+  line-height: 1.25;
+  text-decoration: none;
   cursor: pointer;
 }
 
