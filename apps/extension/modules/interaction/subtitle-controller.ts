@@ -250,6 +250,14 @@ export class InteractiveSubtitleController {
     }
   }
 
+  loadStaticJson3Track(videoId: string, rawJson3: string): void {
+    this.adapter.loadStaticJson3Track(videoId, rawJson3);
+  }
+
+  clearStaticTrack(): void {
+    this.adapter.clearStaticTrack();
+  }
+
   stop(): void {
     this.cancelPendingHover();
     this.cancelPendingResume();

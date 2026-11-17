@@ -206,4 +206,28 @@ test.describe('LexiStream End-to-End Browser & Backend Sync Suite', () => {
     await page.mouse.move(20, 20);
     await expect(status).toContainText('PLAYING');
   });
+
+  test('renders complete static embedded-style subtitle blocks immediately without word-by-word ASR roll-up movement', async ({
+    page,
+  }) => {
+    await page.goto('/youtube-fixture.html');
+    await page.locator('.lx-word').first().waitFor({ state: 'visible' });
+
+    // Trigger ASR word-by-word stream simulation (raw DOM has only 1st word "voterai" at t=10.1s)
+    await page.locator('#asr-rollup-btn').click();
+
+    const overlay = page.locator('[data-lexistream-overlay="true"]');
+    // Immediately displays the FULL static sentence even while raw DOM only has "voterai"!
+    await expect(overlay).toHaveText(
+      'voterai lors des prochaines élections présidentielles en 2027.',
+    );
+
+    const boxAtStart = await overlay.locator('.lexistream-caption-bar').boundingBox();
+    await page.waitForTimeout(450);
+    const boxDuringSpeech = await overlay.locator('.lexistream-caption-bar').boundingBox();
+
+    // Zero width/position jitter while words are spoken!
+    expect(boxDuringSpeech?.width).toBeCloseTo(boxAtStart?.width ?? 0, 0);
+    expect(boxDuringSpeech?.x).toBeCloseTo(boxAtStart?.x ?? 0, 0);
+  });
 });
