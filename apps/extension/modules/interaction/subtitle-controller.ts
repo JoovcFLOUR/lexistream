@@ -377,14 +377,14 @@ export class InteractiveSubtitleController {
       return;
     }
 
-    if (!snapshot.text) {
-      player.classList.remove('lexistream-active');
-      nativeCap?.removeAttribute('aria-hidden');
-      return;
-    }
-
+    // Keep native YouTube roll-up captions hidden throughout active CC playback,
+    // including brief silent inter-cue gaps so native captions never flash between sentences!
     player.classList.add('lexistream-active');
     nativeCap?.setAttribute('aria-hidden', 'true');
+
+    if (!snapshot.text) {
+      return;
+    }
 
     const cueLang = detectSubtitleLanguage(snapshot.text, this.sourceLanguage);
     const rawTokens = tokenizeSubtitle(snapshot.text, cueLang);

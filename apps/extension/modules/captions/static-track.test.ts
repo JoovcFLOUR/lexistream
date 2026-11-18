@@ -204,7 +204,7 @@ describe('Static Pre-Assembled YouTube Subtitle Track (ASR De-Rollup)', () => {
         url: 'https://www.youtube.com/api/timedtext?v=ENjeI4s6Lx0&lang=fr&kind=asr&fmt=json3',
         body: REAL_YOUTUBE_ASR_JSON3,
       },
-      '*',
+      window.location.origin,
     );
 
     await new Promise((r) => setTimeout(r, 30));
@@ -213,6 +213,34 @@ describe('Static Pre-Assembled YouTube Subtitle Track (ASR De-Rollup)', () => {
       'voterai lors des prochaines élections présidentielles en 2027',
     );
 
+    // Rejects cross-origin forged MessageEvents (B2 security check)
+    const crossOriginEvent = new MessageEvent('message', {
+      origin: 'https://evil.example.com',
+      source: null,
+      data: {
+        source: 'lexistream-yt-main',
+        type: 'TIMEDTEXT_PAYLOAD',
+        url: 'https://www.youtube.com/api/timedtext?v=ENjeI4s6Lx0&lang=fr&kind=asr&fmt=json3',
+        body: JSON.stringify({
+          events: [{ tStartMs: 5000, dDurationMs: 2000, segs: [{ utf8: 'FORGED' }] }],
+        }),
+      },
+    });
+    window.dispatchEvent(crossOriginEvent);
+    expect(snapshots[snapshots.length - 1]).not.toBe('FORGED');
+
     adapter.stop();
+  });
+
+  it('strips nested srv3 <s> tags and decodes numeric XML entities in XML fallback', () => {
+    const xml = `<transcript><text start="1.0" dur="2.5"><s t="0">Pr&#233;sidentielles</s> <s t="400">&#x2014; 2027</s></text></transcript>`;
+    const cues = parseYouTubeJson3ToStaticCues(xml);
+    expect(cues).toEqual([
+      {
+        startMs: 1000,
+        endMs: 3500,
+        text: 'Présidentielles — 2027',
+      },
+    ]);
   });
 });

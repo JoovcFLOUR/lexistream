@@ -227,10 +227,20 @@ export const FRENCH_IRREGULAR_FORMS: Record<string, IrregularEntry> = {
   partent: { lemma: 'partir', pos: 'verb' },
   parti: { lemma: 'partir', pos: 'verb' },
 
-  // Demonstratives & pronouns
+  // Demonstratives & pronouns & irregular feminine adjectives
   cet: { lemma: 'ce', pos: 'determiner' },
   cette: { lemma: 'ce', pos: 'determiner' },
   ces: { lemma: 'ce', pos: 'determiner' },
   aux: { lemma: 'à', pos: 'preposition' },
   yeux: { lemma: 'œil', pos: 'noun' },
+  nouvelle: { lemma: 'nouveau', pos: 'adjective' },
+  nouvelles: { lemma: 'nouveau', pos: 'adjective' },
+  nouvel: { lemma: 'nouveau', pos: 'adjective' },
+  nouveaux: { lemma: 'nouveau', pos: 'adjective' },
+  belle: { lemma: 'beau', pos: 'adjective' },
+  belles: { lemma: 'beau', pos: 'adjective' },
+  bel: { lemma: 'beau', pos: 'adjective' },
+  beaux: { lemma: 'beau', pos: 'adjective' },
+  vieille: { lemma: 'vieux', pos: 'adjective' },
+  vieilles: { lemma: 'vieux', pos: 'adjective' },
 };

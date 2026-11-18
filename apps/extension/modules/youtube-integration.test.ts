@@ -164,14 +164,16 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
     await new Promise((r) => setTimeout(r, 5));
     thoughtSpan.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
 
-    // Wait for debounce (15ms) + async lookup
-    await new Promise((r) => setTimeout(r, 45));
+    // Wait for debounce (15ms) + async lookup using condition-based waiting (no timing flake!)
+    const tooltipHost = document.querySelector('[data-lexistream-tooltip-host="true"]')!;
+    expect(tooltipHost?.shadowRoot).toBeTruthy();
+    await waitFor(() =>
+      (tooltipHost.shadowRoot?.textContent ?? '').includes('pensei / pensou'),
+    );
 
     // Debounce prevented "never" from even firing a provider lookup!
     expect(translateSpy).toHaveBeenCalledTimes(1);
 
-    const tooltipHost = document.querySelector('[data-lexistream-tooltip-host="true"]')!;
-    expect(tooltipHost?.shadowRoot).toBeTruthy();
     const shadowText = tooltipHost.shadowRoot!.textContent ?? '';
     expect(shadowText).toContain('thought');
     expect(shadowText).toContain('think');

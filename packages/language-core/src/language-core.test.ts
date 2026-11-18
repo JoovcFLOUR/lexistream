@@ -7,6 +7,7 @@ import {
   detectPhrasesInTokens,
   extractSentenceForToken,
   detectSubtitleLanguage,
+  generateLemmaCandidates,
 } from './index';
 
 describe('@lexistream/language-core', () => {
@@ -144,5 +145,23 @@ describe('@lexistream/language-core', () => {
     const cue = 'Never give up when you look it up in context.';
     const secondUpOffset = cue.indexOf('up in context');
     expect(lemmatizeInContext('up', cue, 'en', secondUpOffset).lemma).toBe('look up');
+
+    // Doubled-consonant French feminine/plural adjectives ("présidentielles" -> "présidentiel") & future ("voterai" -> "voter")
+    expect(
+      lemmatizeInContext(
+        'voterai',
+        'Je voterai lors des prochaines élections présidentielles en 2027.',
+        'fr',
+      ).lemma,
+    ).toBe('voter');
+    expect(
+      generateLemmaCandidates('présidentielles', 'fr'),
+    ).toContain('présidentiel');
+    expect(
+      generateLemmaCandidates('naturelles', 'fr'),
+    ).toContain('naturel');
+    expect(
+      generateLemmaCandidates('nouvelles', 'fr'),
+    ).toContain('nouveau');
   });
 });

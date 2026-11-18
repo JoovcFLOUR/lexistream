@@ -24,26 +24,44 @@ const SENTENCE_END_RE = /[.!?…»"']$/;
 
 function decodeXmlEntities(raw: string): string {
   return raw
+    .replace(/<[^>]+>/g, '') // strip nested srv3 <s t="..."> tags
+    .replace(/&#(\d+);/g, (_m, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCodePoint(parseInt(hex, 16)))
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function parseXmlFallback(xml: string): TimedSubtitleCue[] {
   const cues: Array<{ startMs: number; rawEndMs: number; text: string }> = [];
-  const re = /<text\b[^>]*\bstart="([\d.]+)"[^>]*?(?:\bdur="([\d.]+)")?[^>]*>([\s\S]*?)<\/text>/gi;
+  const tagRe = /<(?:text|p)\b([^>]*)>([\s\S]*?)<\/(?:text|p)>/gi;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) {
-    const startSec = Number(m[1]);
-    const durSec = m[2] !== undefined ? Number(m[2]) : 3.0;
-    const text = decodeXmlEntities(m[3] ?? '');
-    if (!text || !Number.isFinite(startSec)) continue;
-    const startMs = Math.round(startSec * 1000);
-    const rawEndMs = startMs + Math.max(400, Math.round(durSec * 1000));
+  while ((m = tagRe.exec(xml)) !== null) {
+    const attrs = m[1] ?? '';
+    const body = m[2] ?? '';
+    const startSecMatch = /\bstart="([\d.]+)"/i.exec(attrs);
+    const durSecMatch = /\bdur="([\d.]+)"/i.exec(attrs);
+    const tMsMatch = /\bt="(\d+)"/i.exec(attrs);
+    const dMsMatch = /\bd="(\d+)"/i.exec(attrs);
+
+    let startMs = NaN;
+    let durMs = 3000;
+    if (startSecMatch?.[1]) {
+      startMs = Math.round(Number(startSecMatch[1]) * 1000);
+      if (durSecMatch?.[1]) durMs = Math.round(Number(durSecMatch[1]) * 1000);
+    } else if (tMsMatch?.[1]) {
+      startMs = Number(tMsMatch[1]);
+      if (dMsMatch?.[1]) durMs = Number(dMsMatch[1]);
+    }
+
+    const text = decodeXmlEntities(body);
+    if (!text || !Number.isFinite(startMs)) continue;
+    const rawEndMs = startMs + Math.max(400, durMs);
     cues.push({ startMs, rawEndMs, text });
   }
   return finalizeNonOverlappingCues(cues);

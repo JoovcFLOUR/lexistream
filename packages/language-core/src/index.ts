@@ -393,6 +393,24 @@ export function generateLemmaCandidates(
     if (norm.endsWith('ive') && norm.length > 4) {
       push(`${norm.slice(0, -3)}if`);
     }
+    // Doubled-consonant feminine/plural adjectives (présidentielles -> présidentiel, européennes -> européen, bonnes -> bon)
+    for (const [femSuffix, mascSuffix] of [
+      ['elles', 'el'],
+      ['elle', 'el'],
+      ['ennes', 'en'],
+      ['enne', 'en'],
+      ['onnes', 'on'],
+      ['onne', 'on'],
+      ['ettes', 'et'],
+      ['ette', 'et'],
+      ['eilles', 'eil'],
+      ['eille', 'eil'],
+    ] as const) {
+      if (norm.endsWith(femSuffix) && norm.length > femSuffix.length + 2) {
+        push(`${norm.slice(0, -femSuffix.length)}${mascSuffix}`);
+      }
+    }
+
     if (norm.endsWith('iennes') && norm.length > 7) {
       push(`${norm.slice(0, -6)}ien`);
     }

@@ -78,6 +78,17 @@ export class YouTubeCaptionAdapter {
     this.boundHandleNavigation = () => this.handleNavigation();
     this.boundVideoSync = () => this.inspectCurrentCue();
     this.boundHandlePostMessage = (ev: MessageEvent) => {
+      if (ev.origin !== '' && ev.origin !== window.location.origin) {
+        return;
+      }
+      try {
+        const srcWin = ev.source as Window | null;
+        if (srcWin && srcWin.parent && srcWin !== srcWin.parent) {
+          return;
+        }
+      } catch {
+        return;
+      }
       const data = ev.data as {
         source?: string;
         type?: string;
@@ -195,6 +206,19 @@ export class YouTubeCaptionAdapter {
     }
   }
 
+  private trimCaches(): void {
+    while (this.fetchedTracks.size > 16) {
+      const oldest = this.fetchedTracks.keys().next().value;
+      if (oldest !== undefined) this.fetchedTracks.delete(oldest);
+      else break;
+    }
+    while (this.ownFetchUrls.size > 32) {
+      const oldest = this.ownFetchUrls.values().next().value;
+      if (oldest !== undefined) this.ownFetchUrls.delete(oldest);
+      else break;
+    }
+  }
+
   private ingestDirectTimedTextPayload(rawUrl: string, rawBody: string): void {
     const sig = canonicalTimedTextSignature(rawUrl);
     if (!sig) return;
@@ -203,6 +227,7 @@ export class YouTubeCaptionAdapter {
 
     const cues = parseYouTubeJson3ToStaticCues(rawBody);
     if (cues.length > 0) {
+      this.trimCaches();
       this.fetchedTracks.set(sig.trackKey, Promise.resolve(cues));
       this.activeTrackKey = sig.trackKey;
       this.activeStaticCues = cues;
@@ -219,8 +244,14 @@ export class YouTubeCaptionAdapter {
     const currentVid = parseYouTubeVideoId(this.getHref());
     if (currentVid && sig.videoId !== currentVid) return;
 
+    // If a direct MAIN-world payload already populated this exact track, skip redundant fetch!
+    if (this.activeTrackKey === sig.trackKey && this.activeStaticCues) {
+      return;
+    }
+
     let task = this.fetchedTracks.get(sig.trackKey);
     if (!task) {
+      this.trimCaches();
       this.ownFetchUrls.add(sig.json3Url);
       task = (async () => {
         try {
@@ -237,8 +268,19 @@ export class YouTubeCaptionAdapter {
     }
 
     const cues = await task;
+    if (!cues) {
+      // Do not permanently cache transient empty/failed track responses; clear stale language track if switching
+      this.fetchedTracks.delete(sig.trackKey);
+      if (this.activeTrackKey && this.activeTrackKey !== sig.trackKey) {
+        this.activeTrackKey = null;
+        this.activeStaticCues = null;
+        this.inspectCurrentCue();
+      }
+      return;
+    }
+
     const latestVid = parseYouTubeVideoId(this.getHref());
-    if (cues && (!latestVid || sig.videoId === latestVid)) {
+    if (!latestVid || sig.videoId === latestVid) {
       this.activeTrackKey = sig.trackKey;
       this.activeStaticCues = cues;
       this.inspectCurrentCue();

@@ -8,6 +8,7 @@ export default defineConfig({
     description:
       'Lightweight, local-first interactive YouTube subtitles with contextual translations and FSRS vocabulary capture.',
     version: '0.1.0',
+    minimum_chrome_version: '111',
     permissions: ['storage'],
     host_permissions: ['*://*.youtube.com/*'],
   },
