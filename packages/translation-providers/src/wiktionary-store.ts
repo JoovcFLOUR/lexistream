@@ -339,7 +339,12 @@ export class WiktionaryDictionaryStore {
         'en',
         catalogEntry.targetLanguage,
       );
-      finalMap = synthesizeBridgeDictionary(srcToEn, enToTgt, 'en');
+      finalMap = synthesizeBridgeDictionary(
+        srcToEn,
+        enToTgt,
+        'en',
+        catalogEntry.targetLanguage,
+      );
     }
 
     // Remove any stale records for this pair before batch-inserting fresh entries

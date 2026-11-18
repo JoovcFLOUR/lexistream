@@ -240,6 +240,7 @@ export function synthesizeBridgeDictionary(
   sourceToPivot: Map<string, WiktionaryHeadwordEntry>,
   pivotToTarget: Map<string, WiktionaryHeadwordEntry>,
   pivotLanguage: LanguageCode = 'en',
+  targetLanguage: LanguageCode = 'pt',
 ): Map<string, WiktionaryHeadwordEntry> {
   const synthesized = new Map<string, WiktionaryHeadwordEntry>();
   const srcPlain = (w: string) =>
@@ -293,6 +294,23 @@ export function synthesizeBridgeDictionary(
             }
           }
           if (targetTranslations.length > 0) break;
+        }
+
+        // Productive Graeco-Latin cognate fallback when both source and verified English Wiktionary gloss
+        // share deterministic -tial/-tional morphology (e.g. FR "présidentiel" + EN "presidential" -> PT "presidencial")
+        if (targetTranslations.length === 0 && pivotLanguage === 'en' && targetLanguage === 'pt') {
+          const firstCand = pivotCandidates[0] ?? '';
+          if (
+            plainHeadword.endsWith('tiel') &&
+            /^[a-z]{4,}tial$/.test(firstCand)
+          ) {
+            targetTranslations.push(`${firstCand.slice(0, -4)}cial`);
+          } else if (
+            plainHeadword.endsWith('tionnel') &&
+            /^[a-z]{4,}tional$/.test(firstCand)
+          ) {
+            targetTranslations.push(`${firstCand.slice(0, -6)}cional`);
+          }
         }
       }
 

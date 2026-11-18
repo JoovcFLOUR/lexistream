@@ -1,6 +1,7 @@
 import {
   ContextualLexicalProvider,
   IndexedDbTranslationCache,
+  LiveWiktionaryApiProvider,
   OfflineWiktionaryProvider,
   TranslationService,
   WiktionaryDictionaryStore,

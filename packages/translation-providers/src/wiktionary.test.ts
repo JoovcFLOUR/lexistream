@@ -327,4 +327,32 @@ describe('Wiktionary On-Demand Offline Dictionaries & Live CC BY-SA Provider', (
       }),
     ).rejects.toThrow();
   });
+
+  it('bridges French -tiel / -tionnel adjectives ("présidentielles" -> "presidencial") even when en-pt lacks the derived English adjective', async () => {
+    const frEn = 'présidentiel {adj} :: presidential\n';
+    const enPt = 'president {n} (head of state) :: presidente {m}\n';
+
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('fr-en-enwiktionary.txt')) return new Response(frEn, { status: 200 });
+      if (url.includes('en-pt-enwiktionary.txt')) return new Response(enPt, { status: 200 });
+      return new Response('Not found', { status: 404 });
+    });
+
+    const store = new WiktionaryDictionaryStore(
+      'test-wikt-presidentiel',
+      fetchMock as unknown as typeof fetch,
+    );
+    await store.downloadPack('fr-pt');
+    const offlineProvider = new OfflineWiktionaryProvider(store);
+
+    const res = await offlineProvider.translate({
+      word: 'présidentielles',
+      context: 'voterai lors des prochaines élections présidentielles en 2027.',
+      source_language: 'fr',
+      target_language: 'pt',
+    });
+    expect(res.lemma).toBe('présidentiel');
+    expect(res.part_of_speech).toBe('adjective');
+    expect(res.contextual_translation).toBe('presidencial');
+  });
 });
