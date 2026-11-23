@@ -34,6 +34,7 @@ export interface InteractiveSubtitleControllerOptions {
   pauseOnHover?: boolean;
   secondarySubtitleMode?: SecondarySubtitleMode;
   resumeGraceMs?: number;
+  statusPillDurationMs?: number;
   onVocabularyCaptured?: (payload: VocabularyCaptureInput) => void;
 }
 
@@ -75,6 +76,12 @@ const OVERLAY_CSS = `
     padding: 3px 9px;
     border-radius: 999px;
     font-size: 12px;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 420ms ease;
+  }
+  .lexistream-status-pill.is-fading {
+    opacity: 0;
   }
   .lx-word {
     cursor: pointer;
@@ -134,6 +141,7 @@ export class InteractiveSubtitleController {
   private pauseOnHover: boolean;
   private secondarySubtitleMode: SecondarySubtitleMode;
   private readonly resumeGraceMs: number;
+  private readonly statusPillDurationMs: number;
   private readonly onVocabularyCaptured?: (payload: VocabularyCaptureInput) => void;
 
   private readonly adapter: YouTubeCaptionAdapter;
@@ -147,6 +155,8 @@ export class InteractiveSubtitleController {
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private resumeTimer: ReturnType<typeof setTimeout> | null = null;
+  private statusPillTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastCaptionsUnavailable: boolean | null = null;
   private autoPausedByHover = false;
   private lastAutoResumeAt = 0;
   private activeAbortController: AbortController | null = null;
@@ -172,6 +182,7 @@ export class InteractiveSubtitleController {
     this.pauseOnHover = options.pauseOnHover ?? true;
     this.secondarySubtitleMode = options.secondarySubtitleMode ?? 'off';
     this.resumeGraceMs = options.resumeGraceMs ?? 120;
+    this.statusPillDurationMs = options.statusPillDurationMs ?? 4500;
     this.onVocabularyCaptured = options.onVocabularyCaptured;
 
     this.boundPointerOver = (ev) => this.handleDelegatedHover(ev);
@@ -307,6 +318,7 @@ export class InteractiveSubtitleController {
   stop(): void {
     this.cancelPendingHover();
     this.cancelPendingResume();
+    this.clearStatusPill();
     this.autoPausedByHover = false;
     this.lastAutoResumeAt = 0;
     this.unsubscribeEvents?.();
@@ -402,6 +414,38 @@ export class InteractiveSubtitleController {
     });
   }
 
+  private clearStatusPill(): void {
+    if (this.statusPillTimer !== null) {
+      clearTimeout(this.statusPillTimer);
+      this.statusPillTimer = null;
+    }
+  }
+
+  /**
+   * Shows a short, self-dismissing hint when captions are off so it never pollutes the screen.
+   * Fades out after a readable window and removes itself from the DOM.
+   */
+  private showTransientStatusPill(root: HTMLElement): void {
+    if (root.querySelector('.lexistream-status-pill')) return;
+
+    const status = this.doc.createElement('div');
+    status.className = 'lexistream-status-pill';
+    status.setAttribute('data-lexistream-internal', 'true');
+    status.setAttribute('role', 'status');
+    status.textContent = 'LexiStream: Enable YouTube captions (CC) for interactive words';
+    root.appendChild(status);
+
+    this.clearStatusPill();
+    const readableMs = Math.max(600, this.statusPillDurationMs);
+    this.statusPillTimer = setTimeout(() => {
+      this.statusPillTimer = null;
+      status.classList.add('is-fading');
+      setTimeout(() => {
+        status.remove();
+      }, 420);
+    }, readableMs);
+  }
+
   private async renderCueSnapshot(snapshot: SubtitleCueSnapshot): Promise<void> {
     this.activeCue = snapshot;
     this.latestResultByTokenIdx.clear();
@@ -418,12 +462,19 @@ export class InteractiveSubtitleController {
     if (!snapshot.captionsAvailable) {
       player.classList.remove('lexistream-active');
       nativeCap?.removeAttribute('aria-hidden');
-      const status = this.doc.createElement('div');
-      status.className = 'lexistream-status-pill';
-      status.textContent = 'LexiStream: Enable YouTube captions (CC) for interactive words';
-      root.appendChild(status);
+
+      const wasAvailable = this.lastCaptionsUnavailable === false;
+      const isFirstCheck = this.lastCaptionsUnavailable === null;
+      this.lastCaptionsUnavailable = true;
+
+      if (wasAvailable || isFirstCheck) {
+        this.showTransientStatusPill(root);
+      }
       return;
     }
+
+    this.lastCaptionsUnavailable = false;
+    this.clearStatusPill();
 
     // Keep native YouTube roll-up captions hidden throughout active CC playback,
     // including brief silent inter-cue gaps so native captions never flash between sentences!

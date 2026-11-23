@@ -406,4 +406,57 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
 
     controller.stop();
   });
+
+  it('auto-hides the "enable captions" status hint after a short readable period so it never pollutes the screen', async () => {
+    createMockYouTubeDom({
+      videoId: 'vid_hint',
+      title: 'No Captions Lecture',
+      captionsEnabled: false,
+    });
+
+    const repo = new VocabularyRepository('test-ext-hint-db');
+    const translationService = new TranslationService({
+      providers: [new ContextualLexicalProvider()],
+    });
+
+    const controller = new InteractiveSubtitleController({
+      rootDocument: document,
+      locationHref: () => 'https://www.youtube.com/watch?v=vid_hint',
+      translationService,
+      vocabularyRepo: repo,
+      statusPillDurationMs: 60,
+    });
+
+    controller.start();
+    await waitFor(() =>
+      Boolean(document.querySelector('.lexistream-status-pill')),
+    );
+
+    const pill = document.querySelector('.lexistream-status-pill')!;
+    expect(pill.textContent).toContain('Enable YouTube captions (CC)');
+
+    // After the readable window it fades out and is removed from the DOM entirely
+    await waitFor(() => !document.querySelector('.lexistream-status-pill'), 2000);
+    expect(document.querySelector('.lexistream-status-pill')).toBeNull();
+
+    // Re-enabling then disabling captions shows the hint again (once)
+    const player = document.querySelector('#movie_player')!;
+    const subBtn = player.querySelector('.ytp-subtitles-button')!;
+    subBtn.setAttribute('aria-pressed', 'true');
+    const seg = document.createElement('span');
+    seg.className = 'ytp-caption-segment';
+    seg.textContent = 'Captions are back.';
+    player.querySelector('.ytp-caption-window-container')!.appendChild(seg);
+    await waitFor(
+      () => (document.querySelector('[data-lexistream-overlay="true"]')?.textContent ?? '').includes('Captions are back.'),
+    );
+
+    subBtn.setAttribute('aria-pressed', 'false');
+    player.querySelector('.ytp-caption-window-container')!.replaceChildren();
+    await waitFor(() => Boolean(document.querySelector('.lexistream-status-pill')));
+    await waitFor(() => !document.querySelector('.lexistream-status-pill'), 2000);
+    expect(document.querySelector('.lexistream-status-pill')).toBeNull();
+
+    controller.stop();
+  });
 });
