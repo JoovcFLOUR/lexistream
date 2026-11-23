@@ -204,11 +204,61 @@ export function findActiveCueAtTime(
 }
 
 /**
+ * Finds the translated secondary subtitle text aligned lockstep with `primaryCue`
+ * (using O(log N) binary search to locate the first candidate cue, then joining any
+ * translated fragments whose midpoints lie within `primaryCue`'s interval).
+ */
+export function findSecondaryTextForCue(
+  secondaryCues: readonly TimedSubtitleCue[],
+  primaryCue: TimedSubtitleCue | null,
+  currentTimeSec: number,
+): string {
+  if (secondaryCues.length === 0) return '';
+
+  if (primaryCue) {
+    const windowStart = primaryCue.startMs - 150;
+    const windowEnd = primaryCue.endMs + 150;
+
+    // Binary search for first cue with endMs > windowStart
+    let lo = 0;
+    let hi = secondaryCues.length - 1;
+    let startIdx = secondaryCues.length;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (secondaryCues[mid]!.endMs > windowStart) {
+        startIdx = mid;
+        hi = mid - 1;
+      } else {
+        lo = mid + 1;
+      }
+    }
+
+    const parts: string[] = [];
+    for (let i = startIdx; i < secondaryCues.length; i++) {
+      const sc = secondaryCues[i]!;
+      if (sc.startMs > windowEnd) break;
+      const midMs = (sc.startMs + sc.endMs) * 0.5;
+      if (midMs >= windowStart && midMs <= windowEnd) {
+        parts.push(sc.text);
+      }
+    }
+
+    if (parts.length > 0) {
+      return parts.join(' ');
+    }
+  }
+
+  return findActiveCueAtTime(secondaryCues, currentTimeSec)?.text ?? '';
+}
+
+/**
  * Produces a stable deduplication key `(videoId, lang, kind, tlang, name)` for a YouTube
  * `/api/timedtext` URL, or null if not a timedtext URL.
  */
 export function canonicalTimedTextSignature(rawUrl: string): {
   videoId: string;
+  lang: string;
+  tlang: string;
   trackKey: string;
   json3Url: string;
 } | null {
@@ -225,6 +275,8 @@ export function canonicalTimedTextSignature(rawUrl: string): {
     u.searchParams.set('fmt', 'json3');
     return {
       videoId,
+      lang,
+      tlang,
       trackKey: `${videoId}::${lang}::${kind}::${tlang}::${name}`,
       json3Url: u.toString(),
     };

@@ -1,5 +1,6 @@
 import type {
   LanguageCode,
+  SecondarySubtitleMode,
   TranslationResult,
   VocabularyCaptureInput,
 } from '@lexistream/shared-types';
@@ -31,6 +32,7 @@ export interface InteractiveSubtitleControllerOptions {
   targetLanguage?: LanguageCode;
   hoverDebounceMs?: number;
   pauseOnHover?: boolean;
+  secondarySubtitleMode?: SecondarySubtitleMode;
   resumeGraceMs?: number;
   onVocabularyCaptured?: (payload: VocabularyCaptureInput) => void;
 }
@@ -93,6 +95,27 @@ const OVERLAY_CSS = `
     border-bottom: 2px solid #34d399;
     color: #a7f3d0;
   }
+  .lx-secondary-sub {
+    margin-top: 4px;
+    padding-top: 3px;
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+    font-size: clamp(12px, 1.45vw, 17px);
+    line-height: 1.35;
+    color: #cbd5e1;
+    font-weight: 400;
+  }
+  .lx-secondary-sub[data-visibility="blurred"] {
+    filter: blur(5px);
+    opacity: 0.72;
+    cursor: pointer;
+    transition: opacity 90ms ease;
+  }
+  .lx-secondary-sub[data-visibility="blurred"]:hover,
+  .lx-secondary-sub[data-visibility="blurred"]:focus-visible {
+    filter: none;
+    opacity: 1;
+    outline: none;
+  }
   .html5-video-player.lexistream-active .ytp-caption-window-container {
     opacity: 0 !important;
     pointer-events: none !important;
@@ -108,6 +131,7 @@ export class InteractiveSubtitleController {
   private targetLanguage: LanguageCode;
   private readonly hoverDebounceMs: number;
   private pauseOnHover: boolean;
+  private secondarySubtitleMode: SecondarySubtitleMode;
   private readonly resumeGraceMs: number;
   private readonly onVocabularyCaptured?: (payload: VocabularyCaptureInput) => void;
 
@@ -145,6 +169,7 @@ export class InteractiveSubtitleController {
     this.targetLanguage = options.targetLanguage ?? 'pt';
     this.hoverDebounceMs = options.hoverDebounceMs ?? 120;
     this.pauseOnHover = options.pauseOnHover ?? true;
+    this.secondarySubtitleMode = options.secondarySubtitleMode ?? 'off';
     this.resumeGraceMs = options.resumeGraceMs ?? 120;
     this.onVocabularyCaptured = options.onVocabularyCaptured;
 
@@ -214,6 +239,8 @@ export class InteractiveSubtitleController {
     this.adapter = new YouTubeCaptionAdapter({
       rootDocument: this.doc,
       locationHref: this.getHref,
+      enableSecondarySubtitles: this.secondarySubtitleMode !== 'off',
+      secondaryLanguage: this.targetLanguage,
       onCueChange: (snapshot) => {
         void this.renderCueSnapshot(snapshot);
       },
@@ -250,8 +277,26 @@ export class InteractiveSubtitleController {
     }
   }
 
+  setSecondarySubtitleConfig(
+    mode: SecondarySubtitleMode,
+    targetLanguage: LanguageCode,
+  ): void {
+    const prevCue = this.activeCue;
+    this.secondarySubtitleMode = mode;
+    this.targetLanguage = targetLanguage;
+    this.adapter.setSecondaryConfig(mode !== 'off', targetLanguage);
+    // Re-render even if adapter's snapshot text/secondaryText signature didn't change (e.g. blurred <-> visible)
+    if (this.activeCue && this.activeCue === prevCue) {
+      void this.renderCueSnapshot(this.activeCue);
+    }
+  }
+
   loadStaticJson3Track(videoId: string, rawJson3: string): void {
     this.adapter.loadStaticJson3Track(videoId, rawJson3);
+  }
+
+  loadSecondaryStaticJson3Track(videoId: string, lang: string, rawJson3: string): void {
+    this.adapter.loadSecondaryStaticJson3Track(videoId, lang, rawJson3);
   }
 
   clearStaticTrack(): void {
@@ -416,6 +461,18 @@ export class InteractiveSubtitleController {
     }
 
     bar.appendChild(fragment);
+
+    if (this.secondarySubtitleMode !== 'off' && snapshot.secondaryText) {
+      const secEl = this.doc.createElement('div');
+      secEl.className = 'lx-secondary-sub';
+      secEl.dataset.visibility = this.secondarySubtitleMode;
+      if (this.secondarySubtitleMode === 'blurred') {
+        secEl.tabIndex = 0;
+      }
+      secEl.textContent = snapshot.secondaryText;
+      bar.appendChild(secEl);
+    }
+
     root.appendChild(bar);
   }
 
@@ -439,8 +496,15 @@ export class InteractiveSubtitleController {
   private handleDelegatedHover(ev: Event): void {
     const target = ev.target as HTMLElement | null;
     if (target?.closest?.('.lexistream-caption-bar')) {
-      // Keep video paused while moving across spaces/punctuation between words in the bar
+      // Keep video paused while moving across spaces/punctuation or reading the secondary subtitle
       this.cancelPendingResume();
+    }
+
+    if (target?.closest?.('.lx-secondary-sub')) {
+      this.pauseVideoOnWordEnter();
+      this.cancelPendingHover();
+      this.tooltip?.hide();
+      return;
     }
 
     const resolved = this.resolveWordTarget(ev);
@@ -653,6 +717,9 @@ export class InteractiveSubtitleController {
       ? 'Pending translation (edit in Vocabulary)'
       : translation.contextual_translation;
 
+    const contextTranslationToSave =
+      translation.context_translation || this.activeCue.secondaryText || '';
+
     const capturePayload: VocabularyCaptureInput = {
       surface_form: surfaceToSave,
       lemma: translation.lemma,
@@ -662,7 +729,7 @@ export class InteractiveSubtitleController {
       definition: isUntranslatedFallback ? '' : translation.definition,
       part_of_speech: translation.part_of_speech,
       context: sentence,
-      context_translation: translation.context_translation,
+      context_translation: contextTranslationToSave,
       video_id: videoMeta.videoId,
       video_title: videoMeta.videoTitle,
       video_url: videoMeta.videoUrl,

@@ -1,3 +1,4 @@
+import type { SecondarySubtitleMode } from '@lexistream/shared-types';
 import {
   ContextualLexicalProvider,
   IndexedDbTranslationCache,
@@ -74,8 +75,10 @@ video.play = async () => {
 
 let elapsedSinceCueSwitch = 0;
 let asrRollupTimer: ReturnType<typeof setInterval> | null = null;
+let isAsrTrackLooping = false;
 
 function stopAsrDomRollup() {
+  isAsrTrackLooping = false;
   if (asrRollupTimer !== null) {
     clearInterval(asrRollupTimer);
     asrRollupTimer = null;
@@ -85,6 +88,9 @@ function stopAsrDomRollup() {
 setInterval(() => {
   if (!simulatedPaused) {
     simulatedTime = Number((simulatedTime + 0.1).toFixed(1));
+    if (isAsrTrackLooping && simulatedTime >= 18.1) {
+      simulatedTime = 10.1;
+    }
     video.dispatchEvent(new Event('timeupdate'));
     elapsedSinceCueSwitch += 0.1;
     if (autoCycleCues && elapsedSinceCueSwitch >= 2.5 && ccBtn.getAttribute('aria-pressed') === 'true') {
@@ -118,7 +124,13 @@ const translationService = new TranslationService({
 
 let controller: InteractiveSubtitleController | null = null;
 
+const secModeSelect = document.getElementById('secondary-mode-select') as HTMLSelectElement | null;
+const secLangSelect = document.getElementById('secondary-lang-select') as HTMLSelectElement | null;
+
 void repo.getSettings().then((settings) => {
+  if (secModeSelect) secModeSelect.value = settings.secondary_subtitle_mode;
+  if (secLangSelect) secLangSelect.value = settings.target_language;
+
   controller = new InteractiveSubtitleController({
     rootDocument: document,
     locationHref: () => 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
@@ -128,15 +140,28 @@ void repo.getSettings().then((settings) => {
     targetLanguage: settings.target_language,
     hoverDebounceMs: 25,
     pauseOnHover: settings.pause_on_hover,
+    secondarySubtitleMode: settings.secondary_subtitle_mode,
     resumeGraceMs: 90,
   });
   controller.start();
 });
 
+secModeSelect?.addEventListener('change', () => {
+  const nextMode = secModeSelect.value as SecondarySubtitleMode;
+  void repo.saveSettings({ secondary_subtitle_mode: nextMode });
+});
+
+secLangSelect?.addEventListener('change', () => {
+  void repo.saveSettings({ target_language: secLangSelect.value });
+});
+
 subscribeLexiStreamEvents((ev) => {
   if (ev.type === 'settings_changed') {
     void repo.getSettings().then((s) => {
+      if (secModeSelect) secModeSelect.value = s.secondary_subtitle_mode;
+      if (secLangSelect) secLangSelect.value = s.target_language;
       controller?.setPauseOnHover(s.pause_on_hover);
+      controller?.setSecondarySubtitleConfig(s.secondary_subtitle_mode, s.target_language);
     });
   }
 });
@@ -220,14 +245,72 @@ const SAMPLE_ASR_JSON3 = JSON.stringify({
   ],
 });
 
+const SAMPLE_ASR_PT_JSON3 = JSON.stringify({
+  wireMagic: 'pb3',
+  events: [
+    {
+      tStartMs: 10000,
+      dDurationMs: 4200,
+      wWinId: 1,
+      segs: [{ utf8: 'votarei nas próximas eleições presidenciais em 2027.' }],
+    },
+    {
+      tStartMs: 14200,
+      dDurationMs: 4000,
+      wWinId: 1,
+      segs: [{ utf8: 'E essa pessoa é Jean-Luc Mélenchon.' }],
+    },
+  ],
+});
+
+const SAMPLE_ASR_EN_JSON3 = JSON.stringify({
+  wireMagic: 'pb3',
+  events: [
+    {
+      tStartMs: 10000,
+      dDurationMs: 4200,
+      wWinId: 1,
+      segs: [{ utf8: 'will vote in the next presidential elections in 2027.' }],
+    },
+    {
+      tStartMs: 14200,
+      dDurationMs: 4000,
+      wWinId: 1,
+      segs: [{ utf8: 'And that person is Jean-Luc Mélenchon.' }],
+    },
+  ],
+});
+
+const SAMPLE_ASR_ES_JSON3 = JSON.stringify({
+  wireMagic: 'pb3',
+  events: [
+    {
+      tStartMs: 10000,
+      dDurationMs: 4200,
+      wWinId: 1,
+      segs: [{ utf8: 'votaré en las próximas elecciones presidenciales en 2027.' }],
+    },
+    {
+      tStartMs: 14200,
+      dDurationMs: 4000,
+      wWinId: 1,
+      segs: [{ utf8: 'Y esa persona es Jean-Luc Mélenchon.' }],
+    },
+  ],
+});
+
 document.getElementById('asr-rollup-btn')?.addEventListener('click', () => {
   stopAsrDomRollup();
+  isAsrTrackLooping = true;
   autoCycleCues = false;
   simulatedTime = 10.1;
   updatePlaybackHud();
 
-  // Load full static pre-assembled track into LexiStream
+  // Load full static pre-assembled primary + auto-translated secondary tracks into LexiStream
   controller?.loadStaticJson3Track('dQw4w9WgXcQ', SAMPLE_ASR_JSON3);
+  controller?.loadSecondaryStaticJson3Track('dQw4w9WgXcQ', 'pt', SAMPLE_ASR_PT_JSON3);
+  controller?.loadSecondaryStaticJson3Track('dQw4w9WgXcQ', 'en', SAMPLE_ASR_EN_JSON3);
+  controller?.loadSecondaryStaticJson3Track('dQw4w9WgXcQ', 'es', SAMPLE_ASR_ES_JSON3);
 
   // Simultaneously simulate YouTube's raw DOM appending 1 word every 180ms in .ytp-caption-segment
   const rawWords = [

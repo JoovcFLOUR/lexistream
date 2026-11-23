@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import type { UserSettings } from '@lexistream/shared-types';
+import type { SecondarySubtitleMode, UserSettings } from '@lexistream/shared-types';
 import type { VocabularyRepository } from '@lexistream/vocabulary-engine';
 
 export interface SettingsPageProps {
@@ -15,6 +15,9 @@ export function SettingsPage({ repo, settings, onUpdated }: SettingsPageProps) {
   const [dailyNew, setDailyNew] = useState(settings.daily_new_limit);
   const [dailyReview, setDailyReview] = useState(settings.daily_review_limit);
   const [pauseOnHover, setPauseOnHover] = useState(settings.pause_on_hover);
+  const [secondaryMode, setSecondaryMode] = useState<SecondarySubtitleMode>(
+    settings.secondary_subtitle_mode,
+  );
 
   const [email, setEmail] = useState(settings.user_email ?? '');
   const [password, setPassword] = useState('');
@@ -28,6 +31,7 @@ export function SettingsPage({ repo, settings, onUpdated }: SettingsPageProps) {
       daily_new_limit: Number(dailyNew),
       daily_review_limit: Number(dailyReview),
       pause_on_hover: pauseOnHover,
+      secondary_subtitle_mode: secondaryMode,
     });
     setStatusMessage('Local preferences saved.');
     await onUpdated();
@@ -116,6 +120,23 @@ export function SettingsPage({ repo, settings, onUpdated }: SettingsPageProps) {
               <option value="es">Spanish (es)</option>
               <option value="fr">French (fr)</option>
               <option value="de">German (de)</option>
+              <option value="it">Italian (it)</option>
+            </select>
+          </label>
+          <label>
+            Secondary Translated Subtitle (YouTube Auto-Translate)
+            <select
+              data-testid="secondary-subtitle-mode-select"
+              value={secondaryMode}
+              onChange={(e) =>
+                setSecondaryMode(
+                  (e.target as HTMLSelectElement).value as SecondarySubtitleMode,
+                )
+              }
+            >
+              <option value="off">Off — LexiStream primary subtitle only</option>
+              <option value="blurred">Blurred — Reveal on mouse hover</option>
+              <option value="visible">Visible — Always sharp &amp; readable</option>
             </select>
           </label>
           <label>

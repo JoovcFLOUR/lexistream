@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   findActiveCueAtTime,
+  findSecondaryTextForCue,
   parseYouTubeJson3ToStaticCues,
 } from './static-track';
 import { YouTubeCaptionAdapter } from './caption-adapter';
@@ -242,5 +243,95 @@ describe('Static Pre-Assembled YouTube Subtitle Track (ASR De-Rollup)', () => {
         text: 'Présidentielles — 2027',
       },
     ]);
+  });
+
+  it('aligns YouTube auto-translated secondary track (tlang=pt) lockstep with primary static cues', async () => {
+    const ptTranslatedJson3 = JSON.stringify({
+      wireMagic: 'pb3',
+      events: [
+        {
+          tStartMs: 0,
+          dDurationMs: 1560,
+          segs: [{ utf8: 'Até agora, eu nunca tinha votado' }],
+        },
+        {
+          tStartMs: 1560,
+          dDurationMs: 3320,
+          segs: [{ utf8: 'na minha vida.' }],
+        },
+        {
+          tStartMs: 5200,
+          dDurationMs: 3500,
+          segs: [{ utf8: 'votarei nas próximas eleições presidenciais em 2027' }],
+        },
+      ],
+    });
+
+    const primaryCues = parseYouTubeJson3ToStaticCues(REAL_YOUTUBE_ASR_JSON3);
+    const secondaryCues = parseYouTubeJson3ToStaticCues(ptTranslatedJson3);
+
+    expect(
+      findSecondaryTextForCue(secondaryCues, primaryCues[0]!, 0.3),
+    ).toBe('Até agora, eu nunca tinha votado na minha vida.');
+    expect(
+      findSecondaryTextForCue(secondaryCues, primaryCues[1]!, 5.5),
+    ).toBe('votarei nas próximas eleições presidenciais em 2027');
+
+    window.history.replaceState({}, 'Test', '/watch?v=ENjeI4s6Lx0');
+    document.body.innerHTML = '';
+    const player = document.createElement('div');
+    player.id = 'movie_player';
+    player.className = 'html5-video-player';
+    const video = document.createElement('video');
+    video.className = 'html5-main-video';
+    Object.defineProperty(video, 'currentTime', { value: 5.4, configurable: true });
+    player.appendChild(video);
+    const subBtn = document.createElement('button');
+    subBtn.className = 'ytp-subtitles-button';
+    subBtn.setAttribute('aria-pressed', 'true');
+    player.appendChild(subBtn);
+    const cap = document.createElement('div');
+    cap.className = 'ytp-caption-window-container';
+    player.appendChild(cap);
+    document.body.appendChild(player);
+
+    const received: Array<{ text: string; secondaryText: string }> = [];
+    const adapter = new YouTubeCaptionAdapter({
+      rootDocument: document,
+      locationHref: () => 'https://www.youtube.com/watch?v=ENjeI4s6Lx0',
+      secondaryLanguage: 'pt',
+      enableSecondarySubtitles: true,
+      getResourceUrls: () => [],
+      onCueChange: (snap) =>
+        received.push({ text: snap.text, secondaryText: snap.secondaryText ?? '' }),
+    });
+
+    adapter.start();
+    window.postMessage(
+      {
+        source: 'lexistream-yt-main',
+        type: 'TIMEDTEXT_PAYLOAD',
+        url: 'https://www.youtube.com/api/timedtext?v=ENjeI4s6Lx0&lang=fr&kind=asr&fmt=json3',
+        body: REAL_YOUTUBE_ASR_JSON3,
+      },
+      '*',
+    );
+    window.postMessage(
+      {
+        source: 'lexistream-yt-main',
+        type: 'TIMEDTEXT_PAYLOAD',
+        url: 'https://www.youtube.com/api/timedtext?v=ENjeI4s6Lx0&lang=fr&kind=asr&tlang=pt&fmt=json3',
+        body: ptTranslatedJson3,
+      },
+      '*',
+    );
+
+    await new Promise((r) => setTimeout(r, 30));
+    expect(received[received.length - 1]).toEqual({
+      text: 'voterai lors des prochaines élections présidentielles en 2027',
+      secondaryText: 'votarei nas próximas eleições presidenciais em 2027',
+    });
+
+    adapter.stop();
   });
 });

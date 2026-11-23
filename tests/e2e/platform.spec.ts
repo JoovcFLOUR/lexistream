@@ -230,4 +230,43 @@ test.describe('LexiStream End-to-End Browser & Backend Sync Suite', () => {
     expect(boxDuringSpeech?.width).toBeCloseTo(boxAtStart?.width ?? 0, 0);
     expect(boxDuringSpeech?.x).toBeCloseTo(boxAtStart?.x ?? 0, 0);
   });
+
+  test('displays optional smaller secondary translated subtitle in blurred (hover-to-reveal) or visible mode, and switches target language live', async ({
+    page,
+  }) => {
+    await page.goto('/youtube-fixture.html');
+    await page.locator('.lx-word').first().waitFor({ state: 'visible' });
+    await page.locator('#asr-rollup-btn').click();
+
+    const overlay = page.locator('[data-lexistream-overlay="true"]');
+    // Default Off: no secondary subtitle line
+    await expect(overlay.locator('.lx-secondary-sub')).toHaveCount(0);
+
+    // Switch to Blurred mode: secondary Portuguese line appears blurred, then unblurs on hover!
+    await page.locator('#secondary-mode-select').selectOption('blurred');
+    const secSub = overlay.locator('.lx-secondary-sub');
+    await expect(secSub).toHaveText('votarei nas próximas eleições presidenciais em 2027.');
+
+    const blurredFilter = await secSub.evaluate((el) => getComputedStyle(el).filter);
+    expect(blurredFilter).toContain('blur');
+
+    await secSub.hover();
+    const hoverFilter = await secSub.evaluate((el) => getComputedStyle(el).filter);
+    expect(hoverFilter).toBe('none');
+
+    // Switch to Visible mode: stays unblurred even when mouse moves away!
+    await page.mouse.move(10, 10);
+    await page.locator('#secondary-mode-select').selectOption('visible');
+    await expect(secSub).toHaveAttribute('data-visibility', 'visible');
+    const visibleFilter = await secSub.evaluate((el) => getComputedStyle(el).filter);
+    expect(visibleFilter).toBe('none');
+
+    // Switch target language live from PT -> EN
+    await page.locator('#secondary-lang-select').selectOption('en');
+    await expect(secSub).toHaveText('will vote in the next presidential elections in 2027.');
+
+    // Restore Off
+    await page.locator('#secondary-mode-select').selectOption('off');
+    await expect(overlay.locator('.lx-secondary-sub')).toHaveCount(0);
+  });
 });

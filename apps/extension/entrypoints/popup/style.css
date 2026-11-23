@@ -98,3 +98,28 @@ body {
 .btn-primary:hover {
   background: #0369a1;
 }
+
+.popup-select-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.popup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.popup-field select {
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 12px;
+}
+

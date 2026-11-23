@@ -3,6 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { browser } from 'wxt/browser';
 import {
   buildYouTubeTimestampUrl,
+  type SecondarySubtitleMode,
   type UserSettings,
   type VocabularyItem,
 } from '@lexistream/shared-types';
@@ -46,6 +47,16 @@ export function PopupApp() {
     setSettings(updated);
   };
 
+  const updateSecondaryMode = async (mode: SecondarySubtitleMode) => {
+    const updated = await repo.saveSettings({ secondary_subtitle_mode: mode });
+    setSettings(updated);
+  };
+
+  const updateTargetLanguage = async (lang: string) => {
+    const updated = await repo.saveSettings({ target_language: lang });
+    setSettings(updated);
+  };
+
   const openExtensionPage = (hash = '') => {
     const base = browser.runtime.getURL('/dashboard.html');
     window.open(`${base}${hash}`, '_blank', 'noopener');
@@ -84,6 +95,38 @@ export function PopupApp() {
           <div class="stat-value">{installedDictCount}</div>
           <div class="stat-label">Wiktionary Dicts</div>
         </div>
+      </section>
+
+      <section class="popup-select-row" aria-label="Dual subtitle controls">
+        <label class="popup-field">
+          2nd Subtitle (YT Auto)
+          <select
+            value={settings?.secondary_subtitle_mode ?? 'off'}
+            onChange={(e) =>
+              void updateSecondaryMode(
+                (e.target as HTMLSelectElement).value as SecondarySubtitleMode,
+              )
+            }
+          >
+            <option value="off">Off (LexiStream only)</option>
+            <option value="blurred">Blurred (Reveal on hover)</option>
+            <option value="visible">Visible (Always sharp)</option>
+          </select>
+        </label>
+        <label class="popup-field">
+          Translate to
+          <select
+            value={settings?.target_language ?? 'pt'}
+            onChange={(e) => void updateTargetLanguage((e.target as HTMLSelectElement).value)}
+          >
+            <option value="pt">Português (pt)</option>
+            <option value="en">English (en)</option>
+            <option value="es">Español (es)</option>
+            <option value="fr">Français (fr)</option>
+            <option value="de">Deutsch (de)</option>
+            <option value="it">Italiano (it)</option>
+          </select>
+        </label>
       </section>
 
       <section class="recent-list" aria-label="Recent captures">

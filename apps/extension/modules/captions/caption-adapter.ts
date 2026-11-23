@@ -7,12 +7,14 @@ import {
 import {
   canonicalTimedTextSignature,
   findActiveCueAtTime,
+  findSecondaryTextForCue,
   parseYouTubeJson3ToStaticCues,
   type TimedSubtitleCue,
 } from './static-track';
 
 export interface SubtitleCueSnapshot {
   text: string;
+  secondaryText?: string;
   captionsAvailable: boolean;
   timestamp: number;
   video: YouTubeVideoMetadata | null;
@@ -23,23 +25,18 @@ export interface YouTubeCaptionAdapterOptions {
   locationHref?: () => string;
   fetchImpl?: typeof fetch;
   getResourceUrls?: () => string[];
+  enableSecondarySubtitles?: boolean;
+  secondaryLanguage?: string;
   onCueChange: (snapshot: SubtitleCueSnapshot) => void;
 }
 
-/**
- * Observes YouTube subtitles with Static Pre-Assembled Track priority:
- * 1. Passively detects YouTube's own `/api/timedtext` resource URLs via `PerformanceObserver`
- *    and converts word-by-word ASR roll-up tracks into motionless, embedded-style static cue blocks.
- * 2. Synchronizes static cues to `<video>` playback (`timeupdate`, `seeked`, `play`, plus exact
- *    boundary timer while playing — zero idle polling when paused).
- * 3. Gracefully falls back to scoped `#movie_player` DOM segment observation when no timedtext
- *    resource URL is present (e.g., offline fixtures).
- */
 export class YouTubeCaptionAdapter {
   private readonly doc: Document;
   private readonly getHref: () => string;
   private readonly fetchImpl: typeof fetch;
   private readonly getResourceUrls: () => string[];
+  private enableSecondarySubtitles: boolean;
+  private secondaryLanguage: string;
   private readonly onCueChange: (snapshot: SubtitleCueSnapshot) => void;
 
   private playerObserver: MutationObserver | null = null;
@@ -49,7 +46,9 @@ export class YouTubeCaptionAdapter {
   private observedVideo: HTMLVideoElement | null = null;
 
   private activeTrackKey: string | null = null;
+  private activePrimaryLang = '';
   private activeStaticCues: TimedSubtitleCue[] | null = null;
+  private readonly secondaryCuesByVidLang = new Map<string, TimedSubtitleCue[]>();
   private readonly fetchedTracks = new Map<string, Promise<TimedSubtitleCue[] | null>>();
   private readonly ownFetchUrls = new Set<string>();
   private boundaryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -63,10 +62,15 @@ export class YouTubeCaptionAdapter {
     this.doc = options.rootDocument ?? document;
     this.getHref = options.locationHref ?? (() => window.location.href);
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
+    this.enableSecondarySubtitles = options.enableSecondarySubtitles ?? false;
+    this.secondaryLanguage = (options.secondaryLanguage ?? 'pt').slice(0, 2).toLowerCase();
     this.getResourceUrls =
       options.getResourceUrls ??
       (() => {
-        if (typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function') {
+        if (
+          typeof performance === 'undefined' ||
+          typeof performance.getEntriesByType !== 'function'
+        ) {
           return [];
         }
         return performance
@@ -106,14 +110,29 @@ export class YouTubeCaptionAdapter {
     };
   }
 
-  /**
-   * Allows tests or fixtures to load a pre-assembled static `json3` track directly.
-   */
+  setSecondaryConfig(enabled: boolean, targetLanguage: string): void {
+    this.enableSecondarySubtitles = enabled;
+    this.secondaryLanguage = targetLanguage.slice(0, 2).toLowerCase();
+    if (enabled) {
+      this.requestAutoTranslationFromPlayerIfNeeded();
+    }
+    this.inspectCurrentCue();
+  }
+
   loadStaticJson3Track(videoId: string, rawJson3: string): void {
     const cues = parseYouTubeJson3ToStaticCues(rawJson3);
     if (cues.length > 0) {
       this.activeTrackKey = `${videoId}::manual-static`;
       this.activeStaticCues = cues;
+      this.inspectCurrentCue();
+    }
+  }
+
+  loadSecondaryStaticJson3Track(videoId: string, lang: string, rawJson3: string): void {
+    const cues = parseYouTubeJson3ToStaticCues(rawJson3);
+    if (cues.length > 0) {
+      const key = `${videoId}::${lang.slice(0, 2).toLowerCase()}`;
+      this.secondaryCuesByVidLang.set(key, cues);
       this.inspectCurrentCue();
     }
   }
@@ -170,6 +189,7 @@ export class YouTubeCaptionAdapter {
     const currentVid = parseYouTubeVideoId(this.getHref());
     if (this.activeTrackKey && currentVid && !this.activeTrackKey.startsWith(`${currentVid}::`)) {
       this.activeTrackKey = null;
+      this.activePrimaryLang = '';
       this.activeStaticCues = null;
     }
     this.rebindPlayerObserver();
@@ -201,7 +221,7 @@ export class YouTubeCaptionAdapter {
       const currentVid = parseYouTubeVideoId(this.getHref());
       if (parsed && (!currentVid || parsed.videoId === currentVid)) {
         void this.ingestTimedTextUrl(url);
-        break;
+        if (!parsed.tlang) break;
       }
     }
   }
@@ -212,11 +232,65 @@ export class YouTubeCaptionAdapter {
       if (oldest !== undefined) this.fetchedTracks.delete(oldest);
       else break;
     }
+    while (this.secondaryCuesByVidLang.size > 12) {
+      const oldest = this.secondaryCuesByVidLang.keys().next().value;
+      if (oldest !== undefined) this.secondaryCuesByVidLang.delete(oldest);
+      else break;
+    }
     while (this.ownFetchUrls.size > 32) {
       const oldest = this.ownFetchUrls.values().next().value;
       if (oldest !== undefined) this.ownFetchUrls.delete(oldest);
       else break;
     }
+  }
+
+  private requestAutoTranslationFromPlayerIfNeeded(): void {
+    if (!this.enableSecondarySubtitles) return;
+    const vid = parseYouTubeVideoId(this.getHref());
+    if (!vid) return;
+
+    const targetLang = this.secondaryLanguage;
+    if (this.activePrimaryLang && this.activePrimaryLang.slice(0, 2).toLowerCase() === targetLang) {
+      return;
+    }
+    if (this.secondaryCuesByVidLang.has(`${vid}::${targetLang}`)) {
+      return;
+    }
+
+    try {
+      window.postMessage(
+        {
+          source: 'lexistream-yt-isolated',
+          type: 'REQUEST_TRANSLATED_TRACK',
+          videoId: vid,
+          targetLanguage: targetLang,
+        },
+        window.location.origin === 'null' ? '*' : window.location.origin,
+      );
+    } catch {
+      // Ignore in restricted runtimes
+    }
+  }
+
+  private applyParsedTrack(
+    sig: NonNullable<ReturnType<typeof canonicalTimedTextSignature>>,
+    cues: TimedSubtitleCue[],
+  ): void {
+    this.trimCaches();
+    this.fetchedTracks.set(sig.trackKey, Promise.resolve(cues));
+
+    if (sig.tlang) {
+      const tlangKey = `${sig.videoId}::${sig.tlang.slice(0, 2).toLowerCase()}`;
+      this.secondaryCuesByVidLang.set(tlangKey, cues);
+      this.inspectCurrentCue();
+      return;
+    }
+
+    this.activeTrackKey = sig.trackKey;
+    this.activePrimaryLang = sig.lang;
+    this.activeStaticCues = cues;
+    this.requestAutoTranslationFromPlayerIfNeeded();
+    this.inspectCurrentCue();
   }
 
   private ingestDirectTimedTextPayload(rawUrl: string, rawBody: string): void {
@@ -227,11 +301,7 @@ export class YouTubeCaptionAdapter {
 
     const cues = parseYouTubeJson3ToStaticCues(rawBody);
     if (cues.length > 0) {
-      this.trimCaches();
-      this.fetchedTracks.set(sig.trackKey, Promise.resolve(cues));
-      this.activeTrackKey = sig.trackKey;
-      this.activeStaticCues = cues;
-      this.inspectCurrentCue();
+      this.applyParsedTrack(sig, cues);
     } else {
       void this.ingestTimedTextUrl(rawUrl);
     }
@@ -244,8 +314,15 @@ export class YouTubeCaptionAdapter {
     const currentVid = parseYouTubeVideoId(this.getHref());
     if (currentVid && sig.videoId !== currentVid) return;
 
-    // If a direct MAIN-world payload already populated this exact track, skip redundant fetch!
-    if (this.activeTrackKey === sig.trackKey && this.activeStaticCues) {
+    if (!sig.tlang && this.activeTrackKey === sig.trackKey && this.activeStaticCues) {
+      return;
+    }
+    if (
+      sig.tlang &&
+      this.secondaryCuesByVidLang.has(
+        `${sig.videoId}::${sig.tlang.slice(0, 2).toLowerCase()}`,
+      )
+    ) {
       return;
     }
 
@@ -269,9 +346,8 @@ export class YouTubeCaptionAdapter {
 
     const cues = await task;
     if (!cues) {
-      // Do not permanently cache transient empty/failed track responses; clear stale language track if switching
       this.fetchedTracks.delete(sig.trackKey);
-      if (this.activeTrackKey && this.activeTrackKey !== sig.trackKey) {
+      if (!sig.tlang && this.activeTrackKey && this.activeTrackKey !== sig.trackKey) {
         this.activeTrackKey = null;
         this.activeStaticCues = null;
         this.inspectCurrentCue();
@@ -281,9 +357,7 @@ export class YouTubeCaptionAdapter {
 
     const latestVid = parseYouTubeVideoId(this.getHref());
     if (!latestVid || sig.videoId === latestVid) {
-      this.activeTrackKey = sig.trackKey;
-      this.activeStaticCues = cues;
-      this.inspectCurrentCue();
+      this.applyParsedTrack(sig, cues);
     }
   }
 
@@ -318,6 +392,7 @@ export class YouTubeCaptionAdapter {
     if (!player) {
       this.emitIfChanged({
         text: '',
+        secondaryText: '',
         captionsAvailable: false,
         timestamp: 0,
         video: extractYouTubeMetadata(this.doc, this.getHref()),
@@ -335,8 +410,6 @@ export class YouTubeCaptionAdapter {
           const target = m.target as HTMLElement | null;
           if (target?.closest?.('[data-lexistream-internal="true"]')) return false;
 
-          // When Static Pre-Assembled Track is active, ignore word-by-word DOM caption
-          // mutations completely, reacting ONLY to the CC toggle button's aria-pressed state!
           if (this.activeStaticCues) {
             return (
               m.type === 'attributes' &&
@@ -385,7 +458,6 @@ export class YouTubeCaptionAdapter {
     if (active) {
       nextTransitionMs = active.endMs;
     } else {
-      // Find next upcoming cue start
       const upcoming = cues.find((c) => c.startMs > nowMs);
       if (upcoming) nextTransitionMs = upcoming.startMs;
     }
@@ -410,13 +482,12 @@ export class YouTubeCaptionAdapter {
     const subButton = player.querySelector(YOUTUBE_SELECTORS.subtitlesToggleButton);
     const buttonPressed = subButton?.getAttribute('aria-pressed') === 'true';
 
-    // Mode 1: Static Pre-Assembled Track (eliminates ASR word-by-word roll-up jitter)
     if (this.activeStaticCues && this.activeStaticCues.length > 0) {
-      // If user explicitly has CC button present and turned OFF, honor CC OFF
       if (subButton && !buttonPressed) {
         this.clearBoundaryTimer();
         this.emitIfChanged({
           text: '',
+          secondaryText: '',
           captionsAvailable: false,
           timestamp: meta?.currentTime ?? 0,
           video: meta,
@@ -428,8 +499,19 @@ export class YouTubeCaptionAdapter {
       const cue = findActiveCueAtTime(this.activeStaticCues, currentTime);
       this.scheduleNextCueBoundary(this.activeStaticCues, currentTime, this.observedVideo);
 
+      let secondaryText = '';
+      if (this.enableSecondarySubtitles && cue && meta?.videoId) {
+        const secCues = this.secondaryCuesByVidLang.get(
+          `${meta.videoId}::${this.secondaryLanguage}`,
+        );
+        if (secCues) {
+          secondaryText = findSecondaryTextForCue(secCues, cue, currentTime);
+        }
+      }
+
       this.emitIfChanged({
         text: cue?.text ?? '',
+        secondaryText,
         captionsAvailable: true,
         timestamp: currentTime,
         video: meta,
@@ -437,7 +519,6 @@ export class YouTubeCaptionAdapter {
       return;
     }
 
-    // Mode 2: Fallback DOM segment reader (for non-timedtext fixtures or custom embeds)
     const segments = Array.from(player.querySelectorAll(YOUTUBE_SELECTORS.captionSegment));
     const text = segments
       .map((s) => s.textContent ?? '')
@@ -449,6 +530,7 @@ export class YouTubeCaptionAdapter {
 
     this.emitIfChanged({
       text,
+      secondaryText: '',
       captionsAvailable,
       timestamp: meta?.currentTime ?? 0,
       video: meta,
@@ -456,7 +538,7 @@ export class YouTubeCaptionAdapter {
   }
 
   private emitIfChanged(snapshot: SubtitleCueSnapshot): void {
-    const sig = `${snapshot.video?.videoId ?? ''}::${snapshot.captionsAvailable}::${snapshot.text}`;
+    const sig = `${snapshot.video?.videoId ?? ''}::${snapshot.captionsAvailable}::${snapshot.text}::${snapshot.secondaryText ?? ''}`;
     if (sig === this.lastEmittedSignature) return;
     this.lastEmittedSignature = sig;
     this.onCueChange(snapshot);

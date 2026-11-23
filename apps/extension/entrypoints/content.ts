@@ -82,6 +82,7 @@ export default defineContentScript({
       targetLanguage: settings.target_language,
       hoverDebounceMs: settings.hover_debounce_ms,
       pauseOnHover: settings.pause_on_hover,
+      secondarySubtitleMode: settings.secondary_subtitle_mode,
       onVocabularyCaptured: (payload) => {
         void browser.runtime
           .sendMessage({ type: 'LEXISTREAM_CAPTURE', payload })
@@ -97,6 +98,10 @@ export default defineContentScript({
       }
       if (m?.type === 'LEXISTREAM_SETTINGS_CHANGED' && m.settings) {
         controller.setPauseOnHover(m.settings.pause_on_hover);
+        controller.setSecondarySubtitleConfig(
+          m.settings.secondary_subtitle_mode,
+          m.settings.target_language,
+        );
       }
     };
     browser.runtime.onMessage.addListener(onBgMessage);

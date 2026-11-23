@@ -319,4 +319,70 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
 
     controller.stop();
   });
+
+  it('renders secondary auto-translated subtitle in blurred or visible mode and omits it when off', async () => {
+    createMockYouTubeDom({
+      videoId: 'vid_dualsub',
+      title: 'Dual Subtitle Lecture',
+      currentTime: 10.5,
+      captionsEnabled: true,
+    });
+
+    const repo = new VocabularyRepository('test-ext-dualsub-db');
+    const translationService = new TranslationService({
+      providers: [new ContextualLexicalProvider()],
+    });
+
+    const controller = new InteractiveSubtitleController({
+      rootDocument: document,
+      locationHref: () => 'https://www.youtube.com/watch?v=vid_dualsub',
+      translationService,
+      vocabularyRepo: repo,
+      targetLanguage: 'pt',
+      secondarySubtitleMode: 'off',
+    });
+
+    controller.start();
+    await waitFor(() => Boolean(document.querySelector('[data-lexistream-overlay="true"]')));
+
+    controller.loadStaticJson3Track(
+      'vid_dualsub',
+      JSON.stringify({
+        events: [
+          { tStartMs: 10000, dDurationMs: 4000, segs: [{ utf8: 'Bonjour tout le monde.' }] },
+        ],
+      }),
+    );
+    controller.loadSecondaryStaticJson3Track(
+      'vid_dualsub',
+      'pt',
+      JSON.stringify({
+        events: [
+          { tStartMs: 10000, dDurationMs: 4000, segs: [{ utf8: 'Olá a todos.' }] },
+        ],
+      }),
+    );
+
+    const overlay = document.querySelector('[data-lexistream-overlay="true"]')!;
+    // Mode 'off': secondary line is NOT rendered
+    expect(overlay.querySelector('.lx-secondary-sub')).toBeNull();
+
+    // Switch live to 'blurred': secondary line appears with data-visibility="blurred"
+    controller.setSecondarySubtitleConfig('blurred', 'pt');
+    const blurredEl = overlay.querySelector<HTMLElement>('.lx-secondary-sub')!;
+    expect(blurredEl).toBeTruthy();
+    expect(blurredEl.textContent).toBe('Olá a todos.');
+    expect(blurredEl.dataset.visibility).toBe('blurred');
+
+    // Switch live to 'visible': secondary line stays sharp with data-visibility="visible"
+    controller.setSecondarySubtitleConfig('visible', 'pt');
+    const visibleEl = overlay.querySelector<HTMLElement>('.lx-secondary-sub')!;
+    expect(visibleEl.dataset.visibility).toBe('visible');
+
+    // Switch back to 'off': removed cleanly
+    controller.setSecondarySubtitleConfig('off', 'pt');
+    expect(overlay.querySelector('.lx-secondary-sub')).toBeNull();
+
+    controller.stop();
+  });
 });

@@ -129,6 +129,9 @@ export type TranslationResult = z.infer<typeof TranslationResultSchema>;
 export const ReviewRatingSchema = z.enum(['again', 'hard', 'good', 'easy']);
 export type ReviewRating = z.infer<typeof ReviewRatingSchema>;
 
+export const SecondarySubtitleModeSchema = z.enum(['off', 'blurred', 'visible']);
+export type SecondarySubtitleMode = z.infer<typeof SecondarySubtitleModeSchema>;
+
 export const FlashcardRecordSchema = z.object({
   id: z.string().min(1),
   vocabulary_id: z.string().min(1),
@@ -188,6 +191,7 @@ export const UserSettingsSchema = z.object({
   daily_review_limit: z.number().int().min(1).max(1000).default(100),
   enable_interactive_captions: z.boolean().default(true),
   pause_on_hover: z.boolean().default(true),
+  secondary_subtitle_mode: SecondarySubtitleModeSchema.default('off'),
   hover_debounce_ms: z.number().int().min(0).max(1000).default(120),
   api_base_url: z.string().url().default('http://127.0.0.1:8787'),
   auth_token: z.string().nullable().default(null),
