@@ -332,6 +332,24 @@ describe('Static Pre-Assembled YouTube Subtitle Track (ASR De-Rollup)', () => {
       secondaryText: 'votarei nas próximas eleições presidenciais em 2027',
     });
 
+    // Switching primary track language (fr -> es) on the same video must NOT display stale fr->pt secondary text!
+    window.postMessage(
+      {
+        source: 'lexistream-yt-main',
+        type: 'TIMEDTEXT_PAYLOAD',
+        url: 'https://www.youtube.com/api/timedtext?v=ENjeI4s6Lx0&lang=es&kind=asr&fmt=json3',
+        body: JSON.stringify({
+          events: [{ tStartMs: 5000, dDurationMs: 3000, segs: [{ utf8: 'Hola amigos.' }] }],
+        }),
+      },
+      '*',
+    );
+    await new Promise((r) => setTimeout(r, 25));
+    expect(received[received.length - 1]).toEqual({
+      text: 'Hola amigos.',
+      secondaryText: '',
+    });
+
     adapter.stop();
   });
 });

@@ -383,6 +383,27 @@ describe('YouTube Caption Adapter & Interactive Subtitle Controller', () => {
     controller.setSecondarySubtitleConfig('off', 'pt');
     expect(overlay.querySelector('.lx-secondary-sub')).toBeNull();
 
+    // Keyboard focusin pauses video -> focusout outside bar resumes video!
+    const videoEl = document.querySelector<HTMLVideoElement>('video.html5-main-video')!;
+    let pausedState = false;
+    Object.defineProperty(videoEl, 'paused', { get: () => pausedState, configurable: true });
+    vi.spyOn(videoEl, 'pause').mockImplementation(() => {
+      pausedState = true;
+    });
+    const kbPlaySpy = vi.spyOn(videoEl, 'play').mockImplementation(async () => {
+      pausedState = false;
+    });
+
+    const firstWord = overlay.querySelector<HTMLElement>('.lx-word')!;
+    firstWord.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    expect(pausedState).toBe(true);
+
+    firstWord.dispatchEvent(
+      new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }),
+    );
+    await waitFor(() => kbPlaySpy.mock.calls.length === 1);
+    expect(pausedState).toBe(false);
+
     controller.stop();
   });
 });

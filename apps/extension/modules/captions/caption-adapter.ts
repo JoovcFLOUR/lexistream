@@ -128,11 +128,17 @@ export class YouTubeCaptionAdapter {
     }
   }
 
-  loadSecondaryStaticJson3Track(videoId: string, lang: string, rawJson3: string): void {
+  loadSecondaryStaticJson3Track(
+    videoId: string,
+    lang: string,
+    rawJson3: string,
+    sourceLang = '',
+  ): void {
     const cues = parseYouTubeJson3ToStaticCues(rawJson3);
     if (cues.length > 0) {
-      const key = `${videoId}::${lang.slice(0, 2).toLowerCase()}`;
-      this.secondaryCuesByVidLang.set(key, cues);
+      const srcNorm = sourceLang.slice(0, 2).toLowerCase();
+      const tgtNorm = lang.slice(0, 2).toLowerCase();
+      this.secondaryCuesByVidLang.set(`${videoId}::${srcNorm}::${tgtNorm}`, cues);
       this.inspectCurrentCue();
     }
   }
@@ -244,16 +250,24 @@ export class YouTubeCaptionAdapter {
     }
   }
 
+  private secondaryLookupKey(videoId: string, srcLang: string, tgtLang: string): string {
+    return `${videoId}::${srcLang.slice(0, 2).toLowerCase()}::${tgtLang.slice(0, 2).toLowerCase()}`;
+  }
+
   private requestAutoTranslationFromPlayerIfNeeded(): void {
     if (!this.enableSecondarySubtitles) return;
     const vid = parseYouTubeVideoId(this.getHref());
     if (!vid) return;
 
     const targetLang = this.secondaryLanguage;
-    if (this.activePrimaryLang && this.activePrimaryLang.slice(0, 2).toLowerCase() === targetLang) {
+    const srcNorm = this.activePrimaryLang.slice(0, 2).toLowerCase();
+    if (srcNorm && srcNorm === targetLang) {
       return;
     }
-    if (this.secondaryCuesByVidLang.has(`${vid}::${targetLang}`)) {
+    if (
+      this.secondaryCuesByVidLang.has(this.secondaryLookupKey(vid, srcNorm, targetLang)) ||
+      this.secondaryCuesByVidLang.has(this.secondaryLookupKey(vid, '', targetLang))
+    ) {
       return;
     }
 
@@ -263,6 +277,7 @@ export class YouTubeCaptionAdapter {
           source: 'lexistream-yt-isolated',
           type: 'REQUEST_TRANSLATED_TRACK',
           videoId: vid,
+          sourceLanguage: srcNorm,
           targetLanguage: targetLang,
         },
         window.location.origin === 'null' ? '*' : window.location.origin,
@@ -280,7 +295,7 @@ export class YouTubeCaptionAdapter {
     this.fetchedTracks.set(sig.trackKey, Promise.resolve(cues));
 
     if (sig.tlang) {
-      const tlangKey = `${sig.videoId}::${sig.tlang.slice(0, 2).toLowerCase()}`;
+      const tlangKey = this.secondaryLookupKey(sig.videoId, sig.lang, sig.tlang);
       this.secondaryCuesByVidLang.set(tlangKey, cues);
       this.inspectCurrentCue();
       return;
@@ -320,7 +335,7 @@ export class YouTubeCaptionAdapter {
     if (
       sig.tlang &&
       this.secondaryCuesByVidLang.has(
-        `${sig.videoId}::${sig.tlang.slice(0, 2).toLowerCase()}`,
+        this.secondaryLookupKey(sig.videoId, sig.lang, sig.tlang),
       )
     ) {
       return;
@@ -501,9 +516,19 @@ export class YouTubeCaptionAdapter {
 
       let secondaryText = '';
       if (this.enableSecondarySubtitles && cue && meta?.videoId) {
-        const secCues = this.secondaryCuesByVidLang.get(
-          `${meta.videoId}::${this.secondaryLanguage}`,
-        );
+        const secCues =
+          this.secondaryCuesByVidLang.get(
+            this.secondaryLookupKey(
+              meta.videoId,
+              this.activePrimaryLang,
+              this.secondaryLanguage,
+            ),
+          ) ??
+          (this.activePrimaryLang === ''
+            ? this.secondaryCuesByVidLang.get(
+                this.secondaryLookupKey(meta.videoId, '', this.secondaryLanguage),
+              )
+            : undefined);
         if (secCues) {
           secondaryText = findSecondaryTextForCue(secCues, cue, currentTime);
         }

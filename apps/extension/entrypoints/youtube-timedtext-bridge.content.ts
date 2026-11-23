@@ -15,14 +15,23 @@ interface YtPlayerElement extends HTMLElement {
   setOption?: (mod: string, key: string, val: unknown) => void;
 }
 
-/**
- * Lightweight Chrome MV3 MAIN-world bridge at `document_start`.
- * 1. Passively forwards YouTube's own `/api/timedtext` responses to LexiStream's isolated-world
- *    `YouTubeCaptionAdapter` via `window.postMessage` (zero extra network calls for primary cues).
- * 2. When the user enables Dual Subtitles (`blurred` or `visible`), triggers YouTube's native
- *    HTML5 player auto-translation (`translationLanguage`) once for the chosen target language
- *    and immediately restores the original track so both tracks stay cached locally in memory.
- */
+interface QueuedTranslationReq {
+  videoId: string;
+  targetLang: string;
+}
+
+function getCurrentUrlVideoId(): string {
+  try {
+    const u = new URL(window.location.href);
+    const v = u.searchParams.get('v');
+    if (v) return v;
+    const m = u.pathname.match(/^\/(?:shorts|embed)\/([A-Za-z0-9_-]+)/);
+    return m?.[1] ?? '';
+  } catch {
+    return '';
+  }
+}
+
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
   runAt: 'document_start',
@@ -40,29 +49,122 @@ export default defineContentScript({
     }
 
     let pendingRestoreTrack: YtCaptionTrackOption | null = null;
+    let pendingRestoreVideoId = '';
     let restoreTimer: ReturnType<typeof setTimeout> | null = null;
-    const requestedTranslations = new Set<string>();
+    let queuedRequest: QueuedTranslationReq | null = null;
+    const completedTranslations = new Set<string>();
+
+    const recordCompleted = (key: string) => {
+      while (completedTranslations.size >= 32) {
+        const oldest = completedTranslations.values().next().value;
+        if (oldest !== undefined) completedTranslations.delete(oldest);
+        else break;
+      }
+      completedTranslations.add(key);
+    };
+
+    const resetPendingOnNavigation = () => {
+      const nowVid = getCurrentUrlVideoId();
+      if (pendingRestoreVideoId && nowVid !== pendingRestoreVideoId) {
+        pendingRestoreTrack = null;
+        pendingRestoreVideoId = '';
+        queuedRequest = null;
+        if (restoreTimer !== null) {
+          clearTimeout(restoreTimer);
+          restoreTimer = null;
+        }
+      }
+    };
+
+    window.addEventListener('yt-navigate-finish', resetPendingOnNavigation);
+    window.addEventListener('popstate', resetPendingOnNavigation);
+
+    const triggerTranslationFetch = (req: QueuedTranslationReq) => {
+      const nowVid = getCurrentUrlVideoId();
+      if (req.videoId && nowVid && req.videoId !== nowVid) return;
+
+      const player = document.getElementById('movie_player') as YtPlayerElement | null;
+      if (
+        !player ||
+        typeof player.getOption !== 'function' ||
+        typeof player.setOption !== 'function'
+      ) {
+        return;
+      }
+
+      player.loadModule?.('captions');
+      const activeTrack = player.getOption('captions', 'track') as
+        | YtCaptionTrackOption
+        | undefined;
+      if (!activeTrack?.languageCode) return;
+
+      const srcLang = activeTrack.languageCode.slice(0, 2).toLowerCase();
+      if (srcLang === req.targetLang) return;
+
+      const dedupKey = `${req.videoId || nowVid}::${srcLang}::${req.targetLang}`;
+      if (completedTranslations.has(dedupKey)) return;
+
+      pendingRestoreTrack = { ...activeTrack };
+      delete pendingRestoreTrack.translationLanguage;
+      pendingRestoreVideoId = req.videoId || nowVid;
+
+      player.setOption('captions', 'track', {
+        ...pendingRestoreTrack,
+        translationLanguage: { languageCode: req.targetLang },
+      });
+
+      restoreTimer = setTimeout(() => {
+        restoreOriginalTrackIfNeeded();
+      }, 2500);
+    };
 
     const restoreOriginalTrackIfNeeded = () => {
       if (!pendingRestoreTrack) return;
       const toRestore = pendingRestoreTrack;
+      const targetVid = pendingRestoreVideoId;
       pendingRestoreTrack = null;
+      pendingRestoreVideoId = '';
       if (restoreTimer !== null) {
         clearTimeout(restoreTimer);
         restoreTimer = null;
       }
-      try {
-        const player = document.getElementById('movie_player') as YtPlayerElement | null;
-        const cleanTrack = { ...toRestore };
-        delete cleanTrack.translationLanguage;
-        player?.setOption?.('captions', 'track', cleanTrack);
-      } catch {
-        // Ignore
+
+      // Only restore if the user is still on the same video (prevents SPA video-switch clobber!)
+      const nowVid = getCurrentUrlVideoId();
+      if (!targetVid || !nowVid || targetVid === nowVid) {
+        try {
+          const player = document.getElementById('movie_player') as YtPlayerElement | null;
+          const cleanTrack = { ...toRestore };
+          delete cleanTrack.translationLanguage;
+          player?.setOption?.('captions', 'track', cleanTrack);
+        } catch {
+          // Ignore
+        }
+      }
+
+      if (queuedRequest) {
+        const nextReq = queuedRequest;
+        queuedRequest = null;
+        if (!nextReq.videoId || !nowVid || nextReq.videoId === nowVid) {
+          setTimeout(() => triggerTranslationFetch(nextReq), 40);
+        }
       }
     };
 
     const emitTimedText = (url: string, body: string) => {
       if (!url.includes('/api/timedtext') || !body) return;
+      try {
+        const parsed = new URL(url, window.location.origin);
+        const vid = parsed.searchParams.get('v') ?? parsed.searchParams.get('docid') ?? '';
+        const src = (parsed.searchParams.get('lang') ?? '').slice(0, 2).toLowerCase();
+        const tlang = (parsed.searchParams.get('tlang') ?? '').slice(0, 2).toLowerCase();
+        if (vid && src && tlang && body.trim().length > 0) {
+          recordCompleted(`${vid}::${src}::${tlang}`);
+        }
+      } catch {
+        // Ignore URL parse error
+      }
+
       window.postMessage(
         {
           source: 'lexistream-yt-main',
@@ -91,35 +193,17 @@ export default defineContentScript({
         data.type === 'REQUEST_TRANSLATED_TRACK' &&
         typeof data.targetLanguage === 'string'
       ) {
-        const targetLang = data.targetLanguage.slice(0, 2).toLowerCase();
-        const vid = data.videoId ?? '';
-        const dedupKey = `${vid}::${targetLang}`;
-        if (requestedTranslations.has(dedupKey) || pendingRestoreTrack) return;
+        const req: QueuedTranslationReq = {
+          videoId: data.videoId ?? getCurrentUrlVideoId(),
+          targetLang: data.targetLanguage.slice(0, 2).toLowerCase(),
+        };
 
-        const player = document.getElementById('movie_player') as YtPlayerElement | null;
-        if (!player || typeof player.getOption !== 'function' || typeof player.setOption !== 'function') {
+        if (pendingRestoreTrack) {
+          // Queue rapid target-language switches during the restore window instead of dropping!
+          queuedRequest = req;
           return;
         }
-
-        player.loadModule?.('captions');
-        const activeTrack = player.getOption('captions', 'track') as
-          | YtCaptionTrackOption
-          | undefined;
-        if (!activeTrack?.languageCode) return;
-        if (activeTrack.languageCode.slice(0, 2).toLowerCase() === targetLang) return;
-
-        requestedTranslations.add(dedupKey);
-        pendingRestoreTrack = { ...activeTrack };
-        delete pendingRestoreTrack.translationLanguage;
-
-        player.setOption('captions', 'track', {
-          ...pendingRestoreTrack,
-          translationLanguage: { languageCode: targetLang },
-        });
-
-        restoreTimer = setTimeout(() => {
-          restoreOriginalTrackIfNeeded();
-        }, 2500);
+        triggerTranslationFetch(req);
       }
     });
 

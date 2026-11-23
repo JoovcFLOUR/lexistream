@@ -86,7 +86,7 @@ const OVERLAY_CSS = `
   .lx-word:focus-visible {
     background: rgba(56, 189, 248, 0.28);
     color: #e0f2fe;
-    outline: none;
+    outline: 1px solid rgba(56, 189, 248, 0.6);
   }
   .lx-word[data-phrase="true"] {
     border-bottom: 1px dashed rgba(125, 211, 252, 0.55);
@@ -114,7 +114,8 @@ const OVERLAY_CSS = `
   .lx-secondary-sub[data-visibility="blurred"]:focus-visible {
     filter: none;
     opacity: 1;
-    outline: none;
+    outline: 1px dashed rgba(56, 189, 248, 0.6);
+    outline-offset: 2px;
   }
   .html5-video-player.lexistream-active .ytp-caption-window-container {
     opacity: 0 !important;
@@ -320,6 +321,7 @@ export class InteractiveSubtitleController {
       this.overlayRoot.removeEventListener('mouseout', this.boundPointerOut);
       this.overlayRoot.removeEventListener('click', this.boundClick);
       this.overlayRoot.removeEventListener('focusin', this.boundFocusIn);
+      this.overlayRoot.removeEventListener('focusout', this.boundPointerOut);
       this.overlayRoot.removeEventListener('keydown', this.boundKeyDown);
       this.overlayRoot.remove();
       this.overlayRoot = null;
@@ -359,6 +361,7 @@ export class InteractiveSubtitleController {
     root.addEventListener('mouseout', this.boundPointerOut);
     root.addEventListener('click', this.boundClick);
     root.addEventListener('focusin', this.boundFocusIn);
+    root.addEventListener('focusout', this.boundPointerOut);
     root.addEventListener('keydown', this.boundKeyDown);
 
     player.appendChild(root);

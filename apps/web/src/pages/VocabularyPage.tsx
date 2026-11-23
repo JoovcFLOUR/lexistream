@@ -314,6 +314,11 @@ export function VocabularyPage({ repo, items, onRefresh }: VocabularyPageProps) 
                     >
                       {occ.video_title} @ {Math.floor(occ.timestamp)}s
                     </a>
+                    {occ.context_translation && (
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                        → “{occ.context_translation}”
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
