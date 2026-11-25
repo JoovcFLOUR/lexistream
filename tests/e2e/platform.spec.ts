@@ -98,6 +98,42 @@ test.describe('LexiStream End-to-End Browser & Backend Sync Suite', () => {
     await expect(page.locator('main')).toContainText('Demonstrably Retained');
   });
 
+  test('saves a manual translation for an unknown subtitle word and uses it in flashcards offline', async ({
+    page,
+    context,
+  }) => {
+    await page.goto('/youtube-fixture.html');
+    await page.locator('#cue-5').click();
+    await page.getByRole('button', { name: 'Formosa', exact: true }).click();
+    await expect(page.locator('.status-badge')).toContainText('Saved (1 context)');
+
+    await page.goto('/#flashcards');
+    await page.getByTestId('reveal-answer-btn').click();
+
+    await page.getByRole('button', { name: 'Add translation' }).click();
+    const input = page.getByRole('textbox', { name: 'Your translation (PT)' });
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue('');
+    await expect(page.getByTestId('rate-good')).toHaveCount(0);
+
+    await context.setOffline(true);
+    await input.pressSequentially('  Ilha de Formosa (3)  ');
+    await expect(input).toHaveValue('  Ilha de Formosa (3)  ');
+    await input.press('Enter');
+    const flashcard = page.getByRole('region', { name: 'Flashcard review' });
+    await expect(flashcard).toContainText('Ilha de Formosa (3)');
+    await expect(page.getByTestId('rate-good')).toBeVisible();
+
+    await page.getByTestId('nav-vocabulary').click();
+    await expect(page.getByTestId('vocab-card')).toHaveCount(1);
+    await expect(page.getByTestId('vocab-card')).toContainText('Ilha de Formosa (3)');
+
+    await context.setOffline(false);
+    await page.reload();
+    await page.getByTestId('reveal-answer-btn').click();
+    await expect(flashcard).toContainText('Ilha de Formosa (3)');
+  });
+
   test('synchronizes offline vocabulary and FSRS progress across two independent browser devices via Rust + PostgreSQL API', async ({
     browser,
   }) => {

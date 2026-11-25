@@ -101,6 +101,9 @@ export const VocabularyItemSchema = z.object({
 
 export type VocabularyItem = z.infer<typeof VocabularyItemSchema>;
 
+// Already stored by the extension for captures without a word translation.
+export const PENDING_TRANSLATION = 'Pending translation (edit in Vocabulary)';
+
 export const TranslationRequestSchema = z.object({
   word: z.string().trim().min(1).max(128),
   context: z.string().trim().max(2000).default(''),

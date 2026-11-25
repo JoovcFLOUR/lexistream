@@ -16,6 +16,69 @@ async function waitForCondition(
 }
 
 describe('@lexistream/web App', () => {
+  it('can correct an existing flashcard answer without resetting its schedule or context', async () => {
+    const repo = new VocabularyRepository('test-webapp-manual-translation');
+    const { item } = await repo.captureVocabulary({
+      surface_form: 'banc',
+      lemma: 'banc',
+      language: 'fr',
+      target_language: 'pt',
+      translation: 'assento',
+      definition: 'A seat for more than one person.',
+      part_of_speech: 'noun',
+      context: 'Nous sommes assis sur le banc.',
+      context_translation: '',
+      video_id: 'study-clip',
+      video_title: 'Study Clip',
+      video_url: 'https://www.youtube.com/watch?v=study-clip',
+      timestamp: 15,
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const button = (text: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+        (el) => el.textContent?.trim() === text,
+      );
+    render(<App repo={repo} />, container);
+
+    try {
+      container.querySelector<HTMLButtonElement>('[data-testid="nav-flashcards"]')!.click();
+      const reveal = () => container.querySelector<HTMLButtonElement>('[data-testid="reveal-answer-btn"]');
+      await vi.waitFor(() => expect(reveal()).not.toBeNull());
+      reveal()!.click();
+      const cardBefore = await repo.getFlashcardByVocabularyId(item.id);
+      expect(cardBefore).toBeDefined();
+      await vi.waitFor(() => expect(button('Edit translation')).toBeTruthy());
+      button('Edit translation')!.click();
+
+      const editor = () => container.querySelector<HTMLInputElement>('form input');
+      await vi.waitFor(() => expect(editor()?.value).toBe('assento'));
+      editor()!.value = '  ';
+      editor()!.dispatchEvent(new Event('input', { bubbles: true }));
+      await vi.waitFor(() => expect(button('Save translation')?.disabled).toBe(true));
+      button('Cancel')!.click();
+      await vi.waitFor(() => expect(editor()).toBeNull());
+      expect((await repo.getVocabularyById(item.id))?.primary_translation).toBe('assento');
+
+      button('Edit translation')!.click();
+      await vi.waitFor(() => expect(editor()?.value).toBe('assento'));
+      editor()!.value = '  banco de praça  ';
+      editor()!.dispatchEvent(new Event('input', { bubbles: true }));
+      editor()!.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+      await vi.waitFor(() => expect(container.textContent).toContain('banco de praça'));
+      const saved = await repo.getVocabularyById(item.id);
+      expect(saved?.primary_translation).toBe('banco de praça');
+      expect(saved?.occurrences).toEqual(item.occurrences);
+      expect(await repo.getFlashcardByVocabularyId(item.id)).toEqual(cardBefore);
+      expect(await repo.getAllReviewLogs()).toHaveLength(0);
+    } finally {
+      render(null, container);
+      container.remove();
+    }
+  });
+
   it('renders Dashboard, navigates to Vocabulary and Flashcards, edits entries, and completes an FSRS review', async () => {
     const repo = new VocabularyRepository('test-webapp-db-1');
     await repo.captureVocabulary({

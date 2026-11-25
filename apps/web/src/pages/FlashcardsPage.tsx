@@ -1,19 +1,32 @@
-import { useEffect, useState } from 'preact/hooks';
-import { buildYouTubeTimestampUrl, type ReviewRating } from '@lexistream/shared-types';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import {
+  PENDING_TRANSLATION,
+  buildYouTubeTimestampUrl,
+  type ReviewRating,
+} from '@lexistream/shared-types';
 import type { FlashcardService, StudyCardItem } from '@lexistream/flashcard-engine';
+import type { VocabularyRepository } from '@lexistream/vocabulary-engine';
 
 export interface FlashcardsPageProps {
   flashcardService: FlashcardService;
+  repo: VocabularyRepository;
   onReviewCompleted: () => Promise<void>;
 }
 
 export function FlashcardsPage({
   flashcardService,
+  repo,
   onReviewCompleted,
 }: FlashcardsPageProps) {
   const [queue, setQueue] = useState<StudyCardItem[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [shownAt, setShownAt] = useState<number>(Date.now());
+  const [translationDraft, setTranslationDraft] = useState<string | null>(null);
+  const [savingTranslation, setSavingTranslation] = useState(false);
+  const [translationError, setTranslationError] = useState('');
+  const translationInput = useRef<HTMLInputElement>(null);
+  const editButton = useRef<HTMLButtonElement>(null);
+  const restoreEditorFocus = useRef(false);
 
   const loadQueue = async () => {
     const due = await flashcardService.getDueStudyQueue();
@@ -27,14 +40,26 @@ export function FlashcardsPage({
   }, []);
 
   const current = queue[0];
+  const editingTranslation = translationDraft !== null;
+  const needsTranslation = current?.vocabulary.primary_translation === PENDING_TRANSLATION;
+  const canRate = revealed && !editingTranslation;
+
+  useLayoutEffect(() => {
+    if (editingTranslation) {
+      translationInput.current?.focus();
+    } else if (restoreEditorFocus.current) {
+      restoreEditorFocus.current = false;
+      editButton.current?.focus();
+    }
+  }, [editingTranslation]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!current) return;
+      if (!current || editingTranslation || e.defaultPrevented || e.isComposing) return;
       if (e.code === 'Space' && !revealed) {
         e.preventDefault();
         setRevealed(true);
-      } else if (revealed) {
+      } else if (canRate) {
         const ratingByKey: Record<string, ReviewRating> = {
           Digit1: 'again',
           Digit2: 'hard',
@@ -50,7 +75,7 @@ export function FlashcardsPage({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [current, revealed]);
+  }, [current, revealed, canRate, editingTranslation]);
 
   const speakWord = (text: string, lang: string) => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -62,11 +87,40 @@ export function FlashcardsPage({
   };
 
   const handleRate = async (rating: ReviewRating) => {
-    if (!current) return;
+    if (!current || !canRate) return;
     const duration = Date.now() - shownAt;
     await flashcardService.submitReview(current.vocabulary.id, rating, duration);
     await onReviewCompleted();
     await loadQueue();
+  };
+
+  const closeTranslationEditor = () => {
+    restoreEditorFocus.current = true;
+    setTranslationError('');
+    setTranslationDraft(null);
+  };
+
+  const saveTranslation = async () => {
+    const translation = translationInput.current?.value.trim();
+    if (!current || !translation || savingTranslation) return;
+
+    setSavingTranslation(true);
+    setTranslationError('');
+    try {
+      const updated = await repo.updateVocabulary(current.vocabulary.id, {
+        primary_translation: translation,
+      });
+      setQueue((items) =>
+        items.map((item) =>
+          item.vocabulary.id === updated.id ? { ...item, vocabulary: updated } : item,
+        ),
+      );
+      closeTranslationEditor();
+    } catch {
+      setTranslationError('Could not save the translation. Please try again.');
+    } finally {
+      setSavingTranslation(false);
+    }
   };
 
   if (!current) {
@@ -82,7 +136,7 @@ export function FlashcardsPage({
 
   const { vocabulary, card } = current;
   const occ = vocabulary.occurrences[vocabulary.occurrences.length - 1];
-  const intervals = flashcardService.previewIntervals(card);
+  const intervals = canRate ? flashcardService.previewIntervals(card) : null;
 
   return (
     <section class="flashcard-stage" aria-label="Flashcard review">
@@ -142,9 +196,72 @@ export function FlashcardsPage({
               border: '1px solid var(--border-subtle)',
             }}
           >
-            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent)' }}>
-              {vocabulary.primary_translation}
-            </div>
+            {editingTranslation ? (
+              <form
+                class="flashcard-translation-editor"
+                aria-busy={savingTranslation}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveTranslation();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape' && !savingTranslation) {
+                    event.preventDefault();
+                    closeTranslationEditor();
+                  }
+                }}
+              >
+                <label htmlFor="flashcard-translation">
+                  Your translation ({vocabulary.target_language.toUpperCase()})
+                </label>
+                <input
+                  ref={translationInput}
+                  id="flashcard-translation"
+                  lang={vocabulary.target_language}
+                  value={translationDraft ?? ''}
+                  onInput={(event) => setTranslationDraft(event.currentTarget.value)}
+                  aria-describedby={translationError ? 'flashcard-translation-error' : undefined}
+                  readOnly={savingTranslation}
+                  required
+                />
+                <div class="flashcard-translation-actions">
+                  <button
+                    type="submit"
+                    class="btn btn-primary"
+                    disabled={savingTranslation || !translationDraft?.trim()}
+                  >
+                    {savingTranslation ? 'Saving…' : 'Save translation'}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn"
+                    onClick={closeTranslationEditor}
+                    disabled={savingTranslation}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {translationError && (
+                  <div id="flashcard-translation-error" role="alert" style={{ color: 'var(--danger)' }}>
+                    {translationError}
+                  </div>
+                )}
+              </form>
+            ) : (
+              <div class="flashcard-translation-actions">
+                <div class="flashcard-translation" role="status">
+                  {needsTranslation ? 'No translation yet' : vocabulary.primary_translation}
+                </div>
+                <button
+                  ref={editButton}
+                  type="button"
+                  class="btn"
+                  onClick={() => setTranslationDraft(needsTranslation ? '' : vocabulary.primary_translation)}
+                >
+                  {needsTranslation ? 'Add translation' : 'Edit translation'}
+                </button>
+              </div>
+            )}
             <div style={{ fontSize: '14px', marginTop: '4px' }}>
               {vocabulary.primary_definition}
             </div>
@@ -171,41 +288,43 @@ export function FlashcardsPage({
             )}
           </div>
 
-          <div class="rating-grid" role="group" aria-label="Evaluate recall">
-            <button
-              type="button"
-              class="btn btn-danger"
-              data-testid="rate-again"
-              onClick={() => void handleRate('again')}
-            >
-              1 · Again ({intervals.again})
-            </button>
-            <button
-              type="button"
-              class="btn"
-              data-testid="rate-hard"
-              onClick={() => void handleRate('hard')}
-            >
-              2 · Hard ({intervals.hard})
-            </button>
-            <button
-              type="button"
-              class="btn btn-primary"
-              data-testid="rate-good"
-              onClick={() => void handleRate('good')}
-            >
-              3 · Good ({intervals.good})
-            </button>
-            <button
-              type="button"
-              class="btn"
-              style={{ borderColor: 'var(--success)', color: 'var(--success)' }}
-              data-testid="rate-easy"
-              onClick={() => void handleRate('easy')}
-            >
-              4 · Easy ({intervals.easy})
-            </button>
-          </div>
+          {intervals && (
+            <div class="rating-grid" role="group" aria-label="Evaluate recall">
+              <button
+                type="button"
+                class="btn btn-danger"
+                data-testid="rate-again"
+                onClick={() => void handleRate('again')}
+              >
+                1 · Again ({intervals.again})
+              </button>
+              <button
+                type="button"
+                class="btn"
+                data-testid="rate-hard"
+                onClick={() => void handleRate('hard')}
+              >
+                2 · Hard ({intervals.hard})
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary"
+                data-testid="rate-good"
+                onClick={() => void handleRate('good')}
+              >
+                3 · Good ({intervals.good})
+              </button>
+              <button
+                type="button"
+                class="btn"
+                style={{ borderColor: 'var(--success)', color: 'var(--success)' }}
+                data-testid="rate-easy"
+                onClick={() => void handleRate('easy')}
+              >
+                4 · Easy ({intervals.easy})
+              </button>
+            </div>
+          )}
         </div>
       )}
     </section>

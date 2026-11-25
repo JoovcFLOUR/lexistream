@@ -230,6 +230,7 @@ export function App({ repo: injectedRepo, dictionaryStore: injectedDictStore }: 
         {tab === 'flashcards' && (
           <FlashcardsPage
             flashcardService={flashcardService}
+            repo={repo}
             onReviewCompleted={refreshAll}
           />
         )}

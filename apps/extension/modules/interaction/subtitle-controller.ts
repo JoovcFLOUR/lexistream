@@ -1,8 +1,9 @@
-import type {
-  LanguageCode,
-  SecondarySubtitleMode,
-  TranslationResult,
-  VocabularyCaptureInput,
+import {
+  PENDING_TRANSLATION,
+  type LanguageCode,
+  type SecondarySubtitleMode,
+  type TranslationResult,
+  type VocabularyCaptureInput,
 } from '@lexistream/shared-types';
 import {
   detectPhrasesInTokens,
@@ -768,7 +769,7 @@ export class InteractiveSubtitleController {
 
     const surfaceToSave = token.detectedPhrase ?? token.text;
     const cleanTranslationToSave = isUntranslatedFallback
-      ? 'Pending translation (edit in Vocabulary)'
+      ? PENDING_TRANSLATION
       : translation.contextual_translation;
 
     const contextTranslationToSave =
