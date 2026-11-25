@@ -55,7 +55,7 @@ LexiStream is structured as a modular monorepo with strict boundary separation b
   2. **Tier-2 `IndexedDbTranslationCache`** (survives tab closes and offline sessions).
   3. **In-flight request deduplication** (`Map<cacheKey, Promise>`).
   4. **`AbortSignal` propagation** so outdated hover requests cancel immediately.
-  5. **Fallback chain**: `BackendProxyTranslationProvider` → `ContextualLexicalProvider`.
+  5. **Extension service worker fallback chain**: installed Wiktionary packs → live Wiktionary-derived lookup via Free Dictionary API → backend translation proxy → built-in lexical provider.
 
 ### `packages/vocabulary-engine`
 - Owns local IndexedDB persistence (`vocabulary`, `flashcards`, `review_logs`, `sync_outbox`, `settings`).

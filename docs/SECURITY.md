@@ -2,11 +2,12 @@
 
 ## 1. Privacy-First Data Minimization
 
-- **Zero Telemetry & Zero Silent Subtitle Harvesting:** LexiStream never transmits video watch history, full subtitle streams, or pointer movements to the backend.
-- **Local Processing by Default:** Subtitle detection, tokenization, lemmatization, phrasal-verb recognition, FSRS scheduling, and local dictionary lookups execute entirely inside the user's browser.
-- **Explicit Transmission Boundaries:** Network requests occur only when:
-  1. Looking up an uncached hovered/clicked word via the configured `/api/v1/translate` endpoint (sending only `{ word, context, source_language, target_language }`), or
-  2. Explicitly synchronizing saved vocabulary with a user-configured account.
+- **Local study and processing:** Subtitle processing, cached and installed-dictionary lookup, and FSRS scheduling run in the browser. LexiStream does not include analytics or telemetry. Saved vocabulary can include a video link, timestamp, and subtitle excerpt.
+- **YouTube:** LexiStream uses the player's available captions. Timed and auto-translated caption requests go to YouTube; the translated subtitle line is off by default.
+- **Downloaded dictionaries:** Selecting **Download** fetches the selected pack's source files from `raw.githubusercontent.com/open-dsl-dict/wiktionary-dict`. The pack is indexed locally in IndexedDB.
+- **Online lookup:** After a cache and installed-dictionary miss, the extension can send the queried word or phrase and source language to `freedictionaryapi.com`. It does not send the full subtitle excerpt to this service.
+- **Optional backend:** A lookup that falls through to the backend can send the word, subtitle excerpt, language pair, and word offset to `/api/v1/translate`. The translation proxy defaults to loopback. If the backend operator configures `DEEPL_API_KEY`, that backend can forward the text and language pair to DeepL.
+- **Account and sync:** Registering or signing in sends account credentials to the API URL in Settings. **Synchronize Now** exchanges saved vocabulary (including its captured contexts), flashcards, and review logs with that server. The credentials in Docker Compose are local development defaults; do not expose that setup to the public internet.
 
 ## 2. Browser Extension Security (Manifest V3)
 
@@ -14,10 +15,9 @@
   - `permissions: ["storage"]` (no `tabs`, `webRequest`, `scripting`, `history`, or `<all_urls>`).
   - `host_permissions: ["*://*.youtube.com/*"]`.
 - **Cross-Site Scripting (XSS) Prevention:**
-  - Subtitle overlays and Shadow DOM tooltips construct DOM nodes exclusively with `document.createElement` and `node.textContent`.
-  - Adversarial subtitle payloads (e.g., `<img src=x onerror=alert(1)>` or `<script>`) are rendered inertly as literal text, verified by automated tests in `apps/extension/modules/youtube-integration.test.ts`.
+  - Subtitle overlays and Shadow DOM tooltips render caption text with DOM text APIs rather than treating it as HTML. See `apps/extension/modules/youtube-integration.test.ts` for automated coverage.
 - **Style & DOM Isolation:**
-  - The hover tooltip renders inside an encapsulated `ShadowRoot`, preventing page scripts/styles from spoofing or breaking extension UI.
+  - The hover tooltip uses a `ShadowRoot` for style isolation; this is not a security boundary against scripts on the page.
 
 ## 3. API Credential Custody & Authentication (`apps/api`)
 
@@ -32,7 +32,7 @@
 
 ## 4. User Data Portability & Right to Erasure
 
-- **Portable Export:** Users can export their complete vocabulary, contexts, flashcards, and review history at any time in **JSON** or **RFC-4180 CSV** formats.
-- **Complete Deletion:**
-  - **Local:** `Settings -> Delete All Local Data` clears all IndexedDB stores immediately.
+- **Portable Export:** **JSON** includes vocabulary with saved contexts, flashcards, and review history. **CSV** exports vocabulary with a representative context per entry, without review history.
+- **Deleting Study Data:**
+  - **Local:** **Settings → Delete All Local Data** clears vocabulary, flashcards, reviews, pending sync, and settings in that dashboard's storage. Dictionary packs are managed separately from the **Dictionaries** page.
   - **Remote:** `DELETE /api/v1/auth/account` deletes the `users` row with `ON DELETE CASCADE` across `auth_sessions`, `vocabulary_items`, `flashcards`, and `review_logs`.
